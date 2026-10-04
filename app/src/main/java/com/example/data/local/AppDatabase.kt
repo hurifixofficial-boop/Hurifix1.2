@@ -18,7 +18,7 @@ import com.example.data.model.TechnicianEntity
         CustomerJobEntity::class,
         ExpertCategoryEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -29,19 +29,22 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun expertCategoryDao(): ExpertCategoryDao
 
     companion object {
-        private val INSTANCES = java.util.concurrent.ConcurrentHashMap<String, AppDatabase>()
+        const val CENTRAL_DATABASE_NAME = "hurifix_central_shared.db"
 
-        fun getDatabase(context: Context, userPhone: String = "default"): AppDatabase {
-            val cleanPhone = userPhone.replace(Regex("[^0-9]"), "").ifBlank { "default" }
-            val dbName = "hurifix_data_${cleanPhone}.db"
-            return INSTANCES.computeIfAbsent(dbName) {
-                Room.databaseBuilder(
+        @Volatile
+        private var INSTANCE: AppDatabase? = null
+
+        fun getDatabase(context: Context, @Suppress("UNUSED_PARAMETER") userPhone: String = ""): AppDatabase {
+            return INSTANCE ?: synchronized(this) {
+                val instance = Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
-                    dbName
+                    CENTRAL_DATABASE_NAME
                 )
-                    .fallbackToDestructiveMigration()
+                    .fallbackToDestructiveMigration(dropAllTables = false)
                     .build()
+                INSTANCE = instance
+                instance
             }
         }
     }

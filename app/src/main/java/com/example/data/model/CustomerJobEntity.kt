@@ -28,7 +28,9 @@ data class CustomerJobEntity(
     val isCustomerNotifiedOnCompletion: Boolean = false,
     val assignMessageLaterDismissedAt: Long? = null,
     val isDeleted: Boolean = false,
-    val deletedAt: Long? = null
+    val deletedAt: Long? = null,
+    val last_updated: Long = System.currentTimeMillis(),
+    val is_synced: Boolean = false
 )
 
 enum class JobStatus(val label: String, val hindiLabel: String) {

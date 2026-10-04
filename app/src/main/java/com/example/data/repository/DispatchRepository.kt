@@ -14,17 +14,20 @@ import com.example.data.model.ExpertEntity
 import com.example.data.model.JobStatus
 import com.example.data.model.RankedExpert
 import com.example.data.model.TechnicianEntity
+import com.example.data.remote.FirestoreService
+import com.example.data.sync.SyncManager
 import com.example.util.LocationHelper
-import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalCoroutinesApi::class)
 class DispatchRepository(
     private val context: Context? = null,
     initialUserPhone: String = "",
@@ -34,7 +37,9 @@ class DispatchRepository(
     private val fallbackTechnicianDao: TechnicianDao? = null,
     private val fallbackCustomerDao: CustomerDao? = null
 ) {
-    // Secondary constructor for direct DAO usage / unit tests
+    private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    // Secondary constructor for unit tests
     constructor(
         expertDao: ExpertDao,
         jobDao: CustomerJobDao,
@@ -54,14 +59,25 @@ class DispatchRepository(
     private val _currentUserPhone = MutableStateFlow(initialUserPhone.replace(Regex("[^0-9]"), ""))
     val currentUserPhone: StateFlow<String> = _currentUserPhone.asStateFlow()
 
+    val firestoreService: FirestoreService? by lazy {
+        context?.let { FirestoreService(it) }
+    }
+
+    val syncManager: SyncManager? by lazy {
+        context?.let { SyncManager(it) }
+    }
+
     fun setCurrentUser(phone: String) {
         _currentUserPhone.value = phone.replace(Regex("[^0-9]"), "")
     }
 
+    /**
+     * Centralized Shared Database Access:
+     * All approved users (Admin and Staff) access the exact SAME centralized business database.
+     */
     private fun getDb(): AppDatabase? {
         val ctx = context ?: return null
-        val phone = _currentUserPhone.value.ifBlank { "default" }
-        return AppDatabase.getDatabase(ctx, phone)
+        return AppDatabase.getDatabase(ctx)
     }
 
     private fun getExpertDao(): ExpertDao {
@@ -84,102 +100,79 @@ class DispatchRepository(
         return getDb()?.customerDao() ?: fallbackCustomerDao
     }
 
-    val allExperts: Flow<List<ExpertEntity>> = _currentUserPhone.flatMapLatest { phone ->
-        if (context == null) {
-            fallbackExpertDao?.getAllExperts() ?: flowOf(emptyList())
-        } else if (phone.isBlank()) {
-            flowOf(emptyList())
-        } else {
-            AppDatabase.getDatabase(context, phone).expertDao().getAllExperts()
-        }
+    // Shared Flows directly querying the central business Room DB
+    val allExperts: Flow<List<ExpertEntity>> =
+        if (context != null) AppDatabase.getDatabase(context).expertDao().getAllExperts()
+        else fallbackExpertDao?.getAllExperts() ?: flowOf(emptyList())
+
+    val availableExperts: Flow<List<ExpertEntity>> =
+        if (context != null) AppDatabase.getDatabase(context).expertDao().getAvailableExperts()
+        else fallbackExpertDao?.getAvailableExperts() ?: flowOf(emptyList())
+
+    val allJobs: Flow<List<CustomerJobEntity>> =
+        if (context != null) AppDatabase.getDatabase(context).customerJobDao().getAllJobs()
+        else fallbackJobDao?.getAllJobs() ?: flowOf(emptyList())
+
+    val allCategories: Flow<List<ExpertCategoryEntity>> =
+        if (context != null) AppDatabase.getDatabase(context).expertCategoryDao().getAllCategories()
+        else fallbackCategoryDao?.getAllCategories() ?: flowOf(emptyList())
+
+    val deletedJobs: Flow<List<CustomerJobEntity>> =
+        if (context != null) AppDatabase.getDatabase(context).customerJobDao().getDeletedJobs()
+        else fallbackJobDao?.getDeletedJobs() ?: flowOf(emptyList())
+
+    val deletedExperts: Flow<List<ExpertEntity>> =
+        if (context != null) AppDatabase.getDatabase(context).expertDao().getDeletedExperts()
+        else fallbackExpertDao?.getDeletedExperts() ?: flowOf(emptyList())
+
+    val allTechnicians: Flow<List<TechnicianEntity>> =
+        if (context != null) AppDatabase.getDatabase(context).technicianDao().getAllTechnicians()
+        else fallbackTechnicianDao?.getAllTechnicians() ?: flowOf(emptyList())
+
+    val allCustomers: Flow<List<CustomerEntity>> =
+        if (context != null) AppDatabase.getDatabase(context).customerDao().getAllCustomers()
+        else fallbackCustomerDao?.getAllCustomers() ?: flowOf(emptyList())
+
+    fun getJobsForExpert(expertId: Long): Flow<List<CustomerJobEntity>> =
+        if (context != null) AppDatabase.getDatabase(context).customerJobDao().getJobsForExpert(expertId)
+        else fallbackJobDao?.getJobsForExpert(expertId) ?: flowOf(emptyList())
+
+    // ---------------------------------------------------------------------------------------------
+    // Duplicate Order Protection Check (Firestore + Local fallback)
+    // ---------------------------------------------------------------------------------------------
+    suspend fun checkDuplicateCustomerOrder(phone: String): Boolean {
+        val cleanPhone = phone.replace(Regex("[^0-9]"), "")
+        if (cleanPhone.length < 10) return false
+
+        val fourHoursAgo = System.currentTimeMillis() - (4 * 60 * 60 * 1000)
+
+        // 1. Check local centralized DB
+        val localRecent = getJobDao().findRecentJobByPhone(cleanPhone, fourHoursAgo)
+        if (localRecent != null) return true
+
+        // 2. Check cloud Firestore
+        return firestoreService?.isDuplicateOrderInLast4Hours(cleanPhone) ?: false
     }
 
-    val availableExperts: Flow<List<ExpertEntity>> = _currentUserPhone.flatMapLatest { phone ->
-        if (context == null) {
-            fallbackExpertDao?.getAvailableExperts() ?: flowOf(emptyList())
-        } else if (phone.isBlank()) {
-            flowOf(emptyList())
-        } else {
-            AppDatabase.getDatabase(context, phone).expertDao().getAvailableExperts()
-        }
-    }
-
-    val allJobs: Flow<List<CustomerJobEntity>> = _currentUserPhone.flatMapLatest { phone ->
-        if (context == null) {
-            fallbackJobDao?.getAllJobs() ?: flowOf(emptyList())
-        } else if (phone.isBlank()) {
-            flowOf(emptyList())
-        } else {
-            AppDatabase.getDatabase(context, phone).customerJobDao().getAllJobs()
-        }
-    }
-
-    val allCategories: Flow<List<ExpertCategoryEntity>> = _currentUserPhone.flatMapLatest { phone ->
-        if (context == null) {
-            fallbackCategoryDao?.getAllCategories() ?: flowOf(emptyList())
-        } else if (phone.isBlank()) {
-            flowOf(emptyList())
-        } else {
-            AppDatabase.getDatabase(context, phone).expertCategoryDao().getAllCategories()
-        }
-    }
-
-    val deletedJobs: Flow<List<CustomerJobEntity>> = _currentUserPhone.flatMapLatest { phone ->
-        if (context == null) {
-            fallbackJobDao?.getDeletedJobs() ?: flowOf(emptyList())
-        } else if (phone.isBlank()) {
-            flowOf(emptyList())
-        } else {
-            AppDatabase.getDatabase(context, phone).customerJobDao().getDeletedJobs()
-        }
-    }
-
-    val deletedExperts: Flow<List<ExpertEntity>> = _currentUserPhone.flatMapLatest { phone ->
-        if (context == null) {
-            fallbackExpertDao?.getDeletedExperts() ?: flowOf(emptyList())
-        } else if (phone.isBlank()) {
-            flowOf(emptyList())
-        } else {
-            AppDatabase.getDatabase(context, phone).expertDao().getDeletedExperts()
-        }
-    }
-
-    val allTechnicians: Flow<List<TechnicianEntity>>? = _currentUserPhone.flatMapLatest { phone ->
-        if (context == null) {
-            fallbackTechnicianDao?.getAllTechnicians() ?: flowOf(emptyList())
-        } else if (phone.isBlank()) {
-            flowOf(emptyList())
-        } else {
-            AppDatabase.getDatabase(context, phone).technicianDao().getAllTechnicians()
-        }
-    }
-
-    val allCustomers: Flow<List<CustomerEntity>>? = _currentUserPhone.flatMapLatest { phone ->
-        if (context == null) {
-            fallbackCustomerDao?.getAllCustomers() ?: flowOf(emptyList())
-        } else if (phone.isBlank()) {
-            flowOf(emptyList())
-        } else {
-            AppDatabase.getDatabase(context, phone).customerDao().getAllCustomers()
-        }
-    }
-
-    fun getJobsForExpert(expertId: Long): Flow<List<CustomerJobEntity>> = _currentUserPhone.flatMapLatest { phone ->
-        if (context == null) {
-            fallbackJobDao?.getJobsForExpert(expertId) ?: flowOf(emptyList())
-        } else if (phone.isBlank()) {
-            flowOf(emptyList())
-        } else {
-            AppDatabase.getDatabase(context, phone).customerJobDao().getJobsForExpert(expertId)
-        }
-    }
-
+    // ---------------------------------------------------------------------------------------------
+    // Recycle Bin & Data Purge
+    // ---------------------------------------------------------------------------------------------
     suspend fun moveJobToRecycleBin(jobId: Long) {
-        getJobDao().moveToRecycleBin(jobId, System.currentTimeMillis())
+        val now = System.currentTimeMillis()
+        getJobDao().moveToRecycleBin(jobId, now, now)
+        repositoryScope.launch {
+            val job = getJobDao().getJobById(jobId)
+            if (job != null) firestoreService?.pushJobToFirestore(job)
+        }
     }
 
     suspend fun restoreJobFromRecycleBin(jobId: Long) {
-        getJobDao().restoreJobFromRecycleBin(jobId)
+        val now = System.currentTimeMillis()
+        getJobDao().restoreJobFromRecycleBin(jobId, now)
+        repositoryScope.launch {
+            val job = getJobDao().getJobById(jobId)
+            if (job != null) firestoreService?.pushJobToFirestore(job)
+        }
     }
 
     suspend fun deleteJobPermanently(jobId: Long) {
@@ -187,11 +180,21 @@ class DispatchRepository(
     }
 
     suspend fun moveExpertToRecycleBin(expertId: Long) {
-        getExpertDao().moveToRecycleBin(expertId, System.currentTimeMillis())
+        val now = System.currentTimeMillis()
+        getExpertDao().moveToRecycleBin(expertId, now, now)
+        repositoryScope.launch {
+            val expert = getExpertDao().getExpertById(expertId)
+            if (expert != null) firestoreService?.pushExpertToFirestore(expert)
+        }
     }
 
     suspend fun restoreExpertFromRecycleBin(expertId: Long) {
-        getExpertDao().restoreExpertFromRecycleBin(expertId)
+        val now = System.currentTimeMillis()
+        getExpertDao().restoreExpertFromRecycleBin(expertId, now)
+        repositoryScope.launch {
+            val expert = getExpertDao().getExpertById(expertId)
+            if (expert != null) firestoreService?.pushExpertToFirestore(expert)
+        }
     }
 
     suspend fun deleteExpertPermanently(expertId: Long) {
@@ -210,16 +213,28 @@ class DispatchRepository(
     }
 
     suspend fun updateWelcomeMessageSent(expertId: Long, sent: Boolean) {
-        getExpertDao().updateWelcomeMessageSent(expertId, sent)
+        val now = System.currentTimeMillis()
+        getExpertDao().updateWelcomeMessageSent(expertId, sent, now)
+        repositoryScope.launch {
+            val expert = getExpertDao().getExpertById(expertId)
+            if (expert != null) firestoreService?.pushExpertToFirestore(expert)
+        }
     }
 
     // Category operations
     suspend fun insertCategory(name: String, isDefault: Boolean = false): Long {
         val trimmed = name.trim()
         if (trimmed.isBlank()) return 0L
-        return getCategoryDao().insertCategory(
-            ExpertCategoryEntity(name = trimmed, isDefault = isDefault)
+        val cat = ExpertCategoryEntity(
+            name = trimmed,
+            isDefault = isDefault,
+            last_updated = System.currentTimeMillis()
         )
+        val id = getCategoryDao().insertCategory(cat)
+        repositoryScope.launch {
+            firestoreService?.pushCategoryToFirestore(cat.copy(id = id))
+        }
+        return id
     }
 
     suspend fun deleteCategory(category: ExpertCategoryEntity) {
@@ -232,25 +247,32 @@ class DispatchRepository(
 
     // Technician operations
     suspend fun insertTechnician(technician: TechnicianEntity): Long {
-        val id = getTechnicianDao()?.insertTechnician(technician) ?: 0L
-        getExpertDao().insertExpert(
-            ExpertEntity(
-                name = technician.name,
-                phone = technician.contact,
-                category = technician.category,
-                address = technician.address,
-                latitude = technician.latitude,
-                longitude = technician.longitude,
-                isAvailable = technician.isAvailable,
-                rating = technician.rating,
-                completedJobsCount = technician.completedJobsCount
-            )
+        val now = System.currentTimeMillis()
+        val techWithTimestamp = technician.copy(last_updated = now)
+        val id = getTechnicianDao()?.insertTechnician(techWithTimestamp) ?: 0L
+
+        val expert = ExpertEntity(
+            name = technician.name,
+            phone = technician.contact,
+            category = technician.category,
+            address = technician.address,
+            latitude = technician.latitude,
+            longitude = technician.longitude,
+            isAvailable = technician.isAvailable,
+            rating = technician.rating,
+            completedJobsCount = technician.completedJobsCount,
+            last_updated = now
         )
+        val expertId = getExpertDao().insertExpert(expert)
+
+        repositoryScope.launch {
+            firestoreService?.pushExpertToFirestore(expert.copy(id = expertId))
+        }
         return id
     }
 
     suspend fun updateTechnician(technician: TechnicianEntity) {
-        getTechnicianDao()?.updateTechnician(technician)
+        getTechnicianDao()?.updateTechnician(technician.copy(last_updated = System.currentTimeMillis()))
     }
 
     suspend fun deleteTechnician(technician: TechnicianEntity) {
@@ -261,10 +283,10 @@ class DispatchRepository(
 
     // Customer operations
     suspend fun insertCustomer(customer: CustomerEntity): Long =
-        getCustomerDao()?.insertCustomer(customer) ?: 0L
+        getCustomerDao()?.insertCustomer(customer.copy(last_updated = System.currentTimeMillis())) ?: 0L
 
     suspend fun updateCustomer(customer: CustomerEntity) {
-        getCustomerDao()?.updateCustomer(customer)
+        getCustomerDao()?.updateCustomer(customer.copy(last_updated = System.currentTimeMillis()))
     }
 
     suspend fun deleteCustomer(customer: CustomerEntity) {
@@ -274,15 +296,34 @@ class DispatchRepository(
     suspend fun getCustomerById(id: Long): CustomerEntity? = getCustomerDao()?.getCustomerById(id)
 
     // Expert operations
-    suspend fun insertExpert(expert: ExpertEntity): Long = getExpertDao().insertExpert(expert)
+    suspend fun insertExpert(expert: ExpertEntity): Long {
+        val now = System.currentTimeMillis()
+        val expWithTimestamp = expert.copy(last_updated = now)
+        val id = getExpertDao().insertExpert(expWithTimestamp)
+        repositoryScope.launch {
+            firestoreService?.pushExpertToFirestore(expWithTimestamp.copy(id = id))
+        }
+        return id
+    }
 
-    suspend fun updateExpert(expert: ExpertEntity) = getExpertDao().updateExpert(expert)
+    suspend fun updateExpert(expert: ExpertEntity) {
+        val now = System.currentTimeMillis()
+        val expWithTimestamp = expert.copy(last_updated = now, is_synced = false)
+        getExpertDao().updateExpert(expWithTimestamp)
+        repositoryScope.launch {
+            firestoreService?.pushExpertToFirestore(expWithTimestamp)
+        }
+    }
 
     suspend fun deleteExpert(expert: ExpertEntity) = getExpertDao().deleteExpert(expert)
 
     // Customer Job / Order operations
     suspend fun insertJob(job: CustomerJobEntity): Long {
-        val id = getJobDao().insertJob(job)
+        val now = System.currentTimeMillis()
+        val jobWithTimestamp = job.copy(last_updated = now, is_synced = false)
+        val id = getJobDao().insertJob(jobWithTimestamp)
+
+        // Mirror in customers list
         getCustomerDao()?.insertCustomer(
             CustomerEntity(
                 name = job.customerName,
@@ -291,53 +332,117 @@ class DispatchRepository(
                 latitude = job.latitude,
                 longitude = job.longitude,
                 serviceRequired = job.serviceType,
-                issueDescription = job.issueDescription
+                issueDescription = job.issueDescription,
+                last_updated = now
             )
         )
+
+        // Push to cloud Firestore
+        repositoryScope.launch {
+            firestoreService?.pushJobToFirestore(jobWithTimestamp.copy(id = id))
+        }
         return id
     }
 
     suspend fun updateJob(job: CustomerJobEntity) {
-        getJobDao().updateJob(job)
+        val now = System.currentTimeMillis()
+        val updated = job.copy(last_updated = now, is_synced = false)
+        getJobDao().updateJob(updated)
+        repositoryScope.launch {
+            firestoreService?.pushJobToFirestore(updated)
+        }
     }
 
     suspend fun unassignExpertFromJob(jobId: Long) {
-        getJobDao().unassignExpertFromJob(jobId)
+        val now = System.currentTimeMillis()
+        getJobDao().unassignExpertFromJob(jobId, now)
+        repositoryScope.launch {
+            val job = getJobDao().getJobById(jobId)
+            if (job != null) firestoreService?.pushJobToFirestore(job)
+        }
     }
 
     suspend fun updateJobStatus(jobId: Long, status: JobStatus) {
-        getJobDao().updateJobStatus(jobId, status.name)
+        val now = System.currentTimeMillis()
+        getJobDao().updateJobStatus(jobId, status.name, now)
+        repositoryScope.launch {
+            val job = getJobDao().getJobById(jobId)
+            if (job != null) firestoreService?.pushJobToFirestore(job)
+        }
     }
 
-    suspend fun assignJobToExpert(
+    /**
+     * Assigns technician using Firestore Transaction lock so only one assignment succeeds
+     * even if two devices assign simultaneously.
+     */
+    suspend fun assignJobToExpertWithLock(
         jobId: Long,
         expert: ExpertEntity,
         distanceKm: Double
-    ) {
+    ): Result<Unit> {
+        val now = System.currentTimeMillis()
+
+        // 1. Execute Firestore Transaction lock
+        val cloudResult = firestoreService?.assignExpertWithLock(
+            jobId = jobId,
+            expertId = expert.id,
+            expertName = expert.name,
+            expertPhone = expert.phone,
+            distanceKm = distanceKm
+        )
+
+        if (cloudResult != null && cloudResult.isFailure) {
+            return cloudResult
+        }
+
+        // 2. Update local Room database
         getJobDao().updateJobDispatch(
             jobId = jobId,
             status = JobStatus.PROCESSING.name,
             expertId = expert.id,
             expertName = expert.name,
             expertPhone = expert.phone,
-            distanceKm = distanceKm
+            distanceKm = distanceKm,
+            lastUpdated = now
         )
+
+        return Result.success(Unit)
     }
 
     suspend fun updateExpertNotified(jobId: Long, sent: Boolean) {
-        getJobDao().updateExpertNotified(jobId, sent)
+        val now = System.currentTimeMillis()
+        getJobDao().updateExpertNotified(jobId, sent, now)
+        repositoryScope.launch {
+            val job = getJobDao().getJobById(jobId)
+            if (job != null) firestoreService?.pushJobToFirestore(job)
+        }
     }
 
     suspend fun updateCustomerNotifiedOnAssign(jobId: Long, sent: Boolean) {
-        getJobDao().updateCustomerNotifiedOnAssign(jobId, sent)
+        val now = System.currentTimeMillis()
+        getJobDao().updateCustomerNotifiedOnAssign(jobId, sent, now)
+        repositoryScope.launch {
+            val job = getJobDao().getJobById(jobId)
+            if (job != null) firestoreService?.pushJobToFirestore(job)
+        }
     }
 
     suspend fun updateCustomerNotifiedOnCompletion(jobId: Long, sent: Boolean) {
-        getJobDao().updateCustomerNotifiedOnCompletion(jobId, sent)
+        val now = System.currentTimeMillis()
+        getJobDao().updateCustomerNotifiedOnCompletion(jobId, sent, now)
+        repositoryScope.launch {
+            val job = getJobDao().getJobById(jobId)
+            if (job != null) firestoreService?.pushJobToFirestore(job)
+        }
     }
 
     suspend fun updateMessageDismissedAt(jobId: Long, time: Long?) {
-        getJobDao().updateMessageDismissedAt(jobId, time)
+        val now = System.currentTimeMillis()
+        getJobDao().updateMessageDismissedAt(jobId, time, now)
+        repositoryScope.launch {
+            val job = getJobDao().getJobById(jobId)
+            if (job != null) firestoreService?.pushJobToFirestore(job)
+        }
     }
 
     suspend fun completeOrCancelJobWithReview(
@@ -347,13 +452,15 @@ class DispatchRepository(
         rating: Float,
         feedback: String?
     ) {
+        val now = System.currentTimeMillis()
         val newStatus = if (isCompleted) JobStatus.COMPLETED.name else JobStatus.CANCELLED.name
         getJobDao().completeOrCancelJobWithReview(
             jobId = jobId,
             status = newStatus,
             rating = rating,
             feedback = feedback,
-            completedAt = System.currentTimeMillis()
+            completedAt = now,
+            lastUpdated = now
         )
 
         // Update expert's review metrics in database
@@ -366,16 +473,24 @@ class DispatchRepository(
                 val newAvg = (newSum / newCount)
                 val roundedRating = Math.round(newAvg * 10f) / 10f
 
-                expertDao.updateExpert(
-                    expert.copy(
-                        rating = roundedRating,
-                        ratingSum = newSum,
-                        totalRatingsCount = newCount,
-                        completedJobsCount = if (isCompleted) expert.completedJobsCount + 1 else expert.completedJobsCount,
-                        cancelledJobsCount = if (!isCompleted) expert.cancelledJobsCount + 1 else expert.cancelledJobsCount
-                    )
+                val updatedExpert = expert.copy(
+                    rating = roundedRating,
+                    ratingSum = newSum,
+                    totalRatingsCount = newCount,
+                    completedJobsCount = if (isCompleted) expert.completedJobsCount + 1 else expert.completedJobsCount,
+                    cancelledJobsCount = if (!isCompleted) expert.cancelledJobsCount + 1 else expert.cancelledJobsCount,
+                    last_updated = now
                 )
+                expertDao.updateExpert(updatedExpert)
+                repositoryScope.launch {
+                    firestoreService?.pushExpertToFirestore(updatedExpert)
+                }
             }
+        }
+
+        repositoryScope.launch {
+            val job = getJobDao().getJobById(jobId)
+            if (job != null) firestoreService?.pushJobToFirestore(job)
         }
     }
 
@@ -388,13 +503,22 @@ class DispatchRepository(
     ) {
         if (jobs.isNotEmpty()) {
             getJobDao().insertJobs(jobs)
+            repositoryScope.launch {
+                jobs.forEach { firestoreService?.pushJobToFirestore(it) }
+            }
         }
         if (experts.isNotEmpty()) {
             getExpertDao().insertExperts(experts)
+            repositoryScope.launch {
+                experts.forEach { firestoreService?.pushExpertToFirestore(it) }
+            }
         }
         if (categories.isNotEmpty()) {
             val catDao = getCategoryDao()
             categories.forEach { catDao.insertCategory(it) }
+            repositoryScope.launch {
+                categories.forEach { firestoreService?.pushCategoryToFirestore(it) }
+            }
         }
     }
 
@@ -438,23 +562,10 @@ class DispatchRepository(
     }
 
     suspend fun ensureDefaultCategoriesForCurrentUser() {
-        val phone = _currentUserPhone.value
-        if (context != null && phone.isNotBlank()) {
-            val db = AppDatabase.getDatabase(context, phone)
-            if (db.expertCategoryDao().getCategoryCount() == 0) {
-                db.expertCategoryDao().insertCategory(
-                    ExpertCategoryEntity(name = "Electrician", isDefault = true)
-                )
-                db.expertCategoryDao().insertCategory(
-                    ExpertCategoryEntity(name = "Plumber", isDefault = true)
-                )
-            }
-        } else {
-            val catDao = getCategoryDao()
-            if (catDao.getCategoryCount() == 0) {
-                catDao.insertCategory(ExpertCategoryEntity(name = "Electrician", isDefault = true))
-                catDao.insertCategory(ExpertCategoryEntity(name = "Plumber", isDefault = true))
-            }
+        val catDao = getCategoryDao()
+        if (catDao.getCategoryCount() == 0) {
+            insertCategory("Electrician", isDefault = true)
+            insertCategory("Plumber", isDefault = true)
         }
     }
 

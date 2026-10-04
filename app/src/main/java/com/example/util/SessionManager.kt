@@ -2,6 +2,7 @@ package com.example.util
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.example.data.model.HurifixUser
 
 class SessionManager(context: Context) {
     private val prefs: SharedPreferences =
@@ -12,9 +13,15 @@ class SessionManager(context: Context) {
         private const val KEY_USER_NAME = "user_name"
         private const val KEY_USER_PHONE = "user_phone"
         private const val KEY_USER_ROLE = "user_role"
+        private const val KEY_USER_PASSWORD = "user_password"
         private const val KEY_USER_PHOTO_URI = "user_photo_uri"
-        private const val KEY_DEFAULT_SEEDED = "default_users_seeded"
         private const val KEY_DARK_MODE = "dark_mode_enabled"
+
+        // RBAC Permissions
+        private const val KEY_CAN_ADD_EXPERTS = "can_add_experts"
+        private const val KEY_CAN_MANAGE_ORDERS = "can_manage_orders"
+        private const val KEY_CAN_ADD_CUSTOMERS = "can_add_customers"
+        private const val KEY_VIEW_ONLY = "view_only"
     }
 
     fun isDarkModeEnabled(): Boolean = prefs.getBoolean(KEY_DARK_MODE, false)
@@ -23,122 +30,90 @@ class SessionManager(context: Context) {
         prefs.edit().putBoolean(KEY_DARK_MODE, enabled).apply()
     }
 
-    fun getUserPhotoUri(): String? {
-        val phone = getUserPhone()
-        return if (phone.isNotBlank()) {
-            prefs.getString("user_photo_$phone", null) ?: prefs.getString(KEY_USER_PHOTO_URI, null)
-        } else {
-            prefs.getString(KEY_USER_PHOTO_URI, null)
-        }
-    }
-
-    fun getUserRole(): String {
-        val phone = getUserPhone()
-        return if (phone.isNotBlank()) {
-            prefs.getString("user_role_$phone", null) ?: prefs.getString(KEY_USER_ROLE, "Hurifix Partner & Operations") ?: "Hurifix Partner & Operations"
-        } else {
-            prefs.getString(KEY_USER_ROLE, "Hurifix Partner & Operations") ?: "Hurifix Partner & Operations"
-        }
-    }
-
-    fun updateAdminProfile(name: String, phone: String, role: String = "Hurifix Partner & Operations", photoUri: String? = null) {
-        val cleanPhone = phone.replace(Regex("[^0-9]"), "").ifBlank { getUserPhone() }
-        prefs.edit().apply {
-            putString(KEY_USER_NAME, name.trim())
-            putString(KEY_USER_PHONE, cleanPhone)
-            putString(KEY_USER_ROLE, role.trim())
-            putString(KEY_USER_PHOTO_URI, photoUri)
-            if (cleanPhone.isNotBlank()) {
-                putString("user_name_$cleanPhone", name.trim())
-                putString("user_role_$cleanPhone", role.trim())
-                putString("user_photo_$cleanPhone", photoUri)
-            }
-            apply()
-        }
-    }
-
-    init {
-        // Clean up any previously pre-seeded demo user
-        if (prefs.contains("user_pwd_9876543210") || prefs.getBoolean(KEY_DEFAULT_SEEDED, false)) {
-            prefs.edit().apply {
-                remove("user_pwd_9876543210")
-                remove("user_name_9876543210")
-                remove("user_role_9876543210")
-                remove(KEY_DEFAULT_SEEDED)
-                // If currently logged in as the demo phone, reset logged in state
-                if (prefs.getString(KEY_USER_PHONE, "") == "9876543210") {
-                    putBoolean(KEY_IS_LOGGED_IN, false)
-                    putString(KEY_USER_PHONE, "")
-                    putString(KEY_USER_NAME, "")
-                }
-                apply()
-            }
-        }
-    }
-
     fun isLoggedIn(): Boolean = prefs.getBoolean(KEY_IS_LOGGED_IN, false)
 
-    fun getUserName(): String = prefs.getString(KEY_USER_NAME, "Hurifix Partner") ?: "Hurifix Partner"
+    fun getUserName(): String = prefs.getString(KEY_USER_NAME, "Hurifix User") ?: "Hurifix User"
 
     fun getUserPhone(): String = prefs.getString(KEY_USER_PHONE, "") ?: ""
 
-    fun login(phone: String, password: String): Result<String> {
-        val cleanPhone = phone.replace(Regex("[^0-9]"), "")
-        if (cleanPhone.length < 10) {
-            return Result.failure(Exception("Kripya 10-digit mobile number enter karein"))
-        }
-        val storedPassword = prefs.getString("user_pwd_$cleanPhone", null)
-        if (storedPassword == null) {
-            return Result.failure(Exception("Yeh mobile number registered nahi hai. Kripya 'Create New ID' se naya account banayein."))
-        }
-        if (storedPassword != password) {
-            return Result.failure(Exception("Galat password. Kripya sahi password enter karein."))
-        }
+    fun getUserRole(): String = prefs.getString(KEY_USER_ROLE, HurifixUser.ROLE_STAFF) ?: HurifixUser.ROLE_STAFF
 
-        val name = prefs.getString("user_name_$cleanPhone", "Hurifix Partner") ?: "Hurifix Partner"
-        val role = prefs.getString("user_role_$cleanPhone", "Hurifix Partner & Operations") ?: "Hurifix Partner & Operations"
-        val photo = prefs.getString("user_photo_$cleanPhone", null)
+    fun getUserPassword(): String = prefs.getString(KEY_USER_PASSWORD, "") ?: ""
 
-        prefs.edit().apply {
-            putBoolean(KEY_IS_LOGGED_IN, true)
-            putString(KEY_USER_PHONE, cleanPhone)
-            putString(KEY_USER_NAME, name)
-            putString(KEY_USER_ROLE, role)
-            putString(KEY_USER_PHOTO_URI, photo)
-            apply()
-        }
-        return Result.success(name)
+    fun getUserPhotoUri(): String? = prefs.getString(KEY_USER_PHOTO_URI, null)
+
+    fun isAdmin(): Boolean {
+        val role = getUserRole()
+        val phone = getUserPhone()
+        return role.equals(HurifixUser.ROLE_ADMIN, ignoreCase = true) || HurifixUser.isMasterAdminPhone(phone)
     }
 
-    fun register(name: String, phone: String, password: String): Result<String> {
-        val cleanPhone = phone.replace(Regex("[^0-9]"), "")
-        if (cleanPhone.length < 10) {
-            return Result.failure(Exception("Kripya 10-digit mobile number enter karein"))
-        }
-        if (name.isBlank()) {
-            return Result.failure(Exception("Kripya apna naam enter karein"))
-        }
-        if (password.length < 4) {
-            return Result.failure(Exception("Password kam se kam 4 aksharon ka hona chahiye"))
-        }
-        if (prefs.contains("user_pwd_$cleanPhone")) {
-            return Result.failure(Exception("Yeh mobile number pehle se registered hai. Kripya Login karein."))
-        }
+    fun canAddExperts(): Boolean {
+        if (isAdmin()) return true
+        if (isViewOnly()) return false
+        return prefs.getBoolean(KEY_CAN_ADD_EXPERTS, true)
+    }
 
-        val role = "Hurifix Partner & Operations"
+    fun canManageOrders(): Boolean {
+        if (isAdmin()) return true
+        if (isViewOnly()) return false
+        return prefs.getBoolean(KEY_CAN_MANAGE_ORDERS, true)
+    }
+
+    fun canAddCustomers(): Boolean {
+        if (isAdmin()) return true
+        if (isViewOnly()) return false
+        return prefs.getBoolean(KEY_CAN_ADD_CUSTOMERS, true)
+    }
+
+    fun isViewOnly(): Boolean {
+        if (isAdmin()) return false
+        return prefs.getBoolean(KEY_VIEW_ONLY, false)
+    }
+
+    fun saveUserSession(user: HurifixUser) {
         prefs.edit().apply {
-            putString("user_pwd_$cleanPhone", password)
-            putString("user_name_$cleanPhone", name.trim())
-            putString("user_role_$cleanPhone", role)
-            // Auto login after sign up
             putBoolean(KEY_IS_LOGGED_IN, true)
-            putString(KEY_USER_PHONE, cleanPhone)
-            putString(KEY_USER_NAME, name.trim())
-            putString(KEY_USER_ROLE, role)
-            remove(KEY_USER_PHOTO_URI)
+            putString(KEY_USER_PHONE, user.phone)
+            putString(KEY_USER_NAME, user.name)
+            putString(KEY_USER_ROLE, user.role)
+            putString(KEY_USER_PASSWORD, user.password)
+            putString(KEY_USER_PHOTO_URI, user.photo_uri)
+            putBoolean(KEY_CAN_ADD_EXPERTS, user.can_add_experts)
+            putBoolean(KEY_CAN_MANAGE_ORDERS, user.can_manage_orders)
+            putBoolean(KEY_CAN_ADD_CUSTOMERS, user.can_add_customers)
+            putBoolean(KEY_VIEW_ONLY, user.view_only)
             apply()
         }
-        return Result.success(name.trim())
+    }
+
+    fun updatePermissions(
+        canAddExperts: Boolean,
+        canManageOrders: Boolean,
+        canAddCustomers: Boolean,
+        viewOnly: Boolean
+    ) {
+        prefs.edit().apply {
+            putBoolean(KEY_CAN_ADD_EXPERTS, canAddExperts)
+            putBoolean(KEY_CAN_MANAGE_ORDERS, canManageOrders)
+            putBoolean(KEY_CAN_ADD_CUSTOMERS, canAddCustomers)
+            putBoolean(KEY_VIEW_ONLY, viewOnly)
+            apply()
+        }
+    }
+
+    fun updatePassword(newPassword: String) {
+        prefs.edit().putString(KEY_USER_PASSWORD, newPassword).apply()
+    }
+
+    fun updateAdminProfile(name: String, phone: String, role: String = "Hurifix Admin", photoUri: String? = null) {
+        prefs.edit().apply {
+            putString(KEY_USER_NAME, name.trim())
+            if (phone.isNotBlank()) putString(KEY_USER_PHONE, phone.replace(Regex("[^0-9]"), ""))
+            putString(KEY_USER_ROLE, role.trim())
+            putString(KEY_USER_PHOTO_URI, photoUri)
+            apply()
+        }
     }
 
     fun logout() {
@@ -147,7 +122,12 @@ class SessionManager(context: Context) {
             putString(KEY_USER_PHONE, "")
             putString(KEY_USER_NAME, "")
             remove(KEY_USER_ROLE)
+            remove(KEY_USER_PASSWORD)
             remove(KEY_USER_PHOTO_URI)
+            remove(KEY_CAN_ADD_EXPERTS)
+            remove(KEY_CAN_MANAGE_ORDERS)
+            remove(KEY_CAN_ADD_CUSTOMERS)
+            remove(KEY_VIEW_ONLY)
             apply()
         }
     }

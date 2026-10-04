@@ -32,6 +32,15 @@ interface TechnicianDao {
     @Query("SELECT * FROM technicians WHERE name LIKE '%' || :query || '%' OR contact LIKE '%' || :query || '%' OR address LIKE '%' || :query || '%'")
     fun searchTechnicians(query: String): Flow<List<TechnicianEntity>>
 
+    @Query("SELECT * FROM technicians WHERE is_synced = 0")
+    suspend fun getUnsyncedTechnicians(): List<TechnicianEntity>
+
+    @Query("SELECT * FROM technicians")
+    suspend fun getAllTechniciansSync(): List<TechnicianEntity>
+
+    @Query("UPDATE technicians SET is_synced = 1 WHERE id = :id")
+    suspend fun markTechnicianSynced(id: Long)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTechnician(technician: TechnicianEntity): Long
 

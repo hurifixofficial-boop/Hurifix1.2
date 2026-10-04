@@ -20,11 +20,20 @@ interface ExpertDao {
     @Query("SELECT * FROM experts WHERE isDeleted = 1 ORDER BY deletedAt DESC")
     fun getDeletedExperts(): Flow<List<ExpertEntity>>
 
-    @Query("UPDATE experts SET isDeleted = 1, deletedAt = :deletedAt WHERE id = :id")
-    suspend fun moveToRecycleBin(id: Long, deletedAt: Long = System.currentTimeMillis())
+    @Query("SELECT * FROM experts WHERE is_synced = 0")
+    suspend fun getUnsyncedExperts(): List<ExpertEntity>
 
-    @Query("UPDATE experts SET isDeleted = 0, deletedAt = NULL WHERE id = :id")
-    suspend fun restoreExpertFromRecycleBin(id: Long)
+    @Query("SELECT COUNT(*) FROM experts WHERE is_synced = 0")
+    fun getUnsyncedExpertsCount(): Flow<Int>
+
+    @Query("SELECT * FROM experts")
+    suspend fun getAllExpertsSync(): List<ExpertEntity>
+
+    @Query("UPDATE experts SET isDeleted = 1, deletedAt = :deletedAt, last_updated = :lastUpdated, is_synced = 0 WHERE id = :id")
+    suspend fun moveToRecycleBin(id: Long, deletedAt: Long = System.currentTimeMillis(), lastUpdated: Long = System.currentTimeMillis())
+
+    @Query("UPDATE experts SET isDeleted = 0, deletedAt = NULL, last_updated = :lastUpdated, is_synced = 0 WHERE id = :id")
+    suspend fun restoreExpertFromRecycleBin(id: Long, lastUpdated: Long = System.currentTimeMillis())
 
     @Query("DELETE FROM experts WHERE isDeleted = 1 AND deletedAt <= :cutoffTimestamp")
     suspend fun purgeExpertsOlderThan(cutoffTimestamp: Long)
@@ -32,8 +41,8 @@ interface ExpertDao {
     @Query("DELETE FROM experts WHERE isDeleted = 1")
     suspend fun clearRecycleBin()
 
-    @Query("UPDATE experts SET isWelcomeMessageSent = :sent WHERE id = :expertId")
-    suspend fun updateWelcomeMessageSent(expertId: Long, sent: Boolean)
+    @Query("UPDATE experts SET isWelcomeMessageSent = :sent, last_updated = :lastUpdated, is_synced = 0 WHERE id = :expertId")
+    suspend fun updateWelcomeMessageSent(expertId: Long, sent: Boolean, lastUpdated: Long = System.currentTimeMillis())
 
     @Query("SELECT * FROM experts WHERE id = :id")
     suspend fun getExpertById(id: Long): ExpertEntity?
@@ -52,6 +61,9 @@ interface ExpertDao {
 
     @Query("DELETE FROM experts WHERE id = :id")
     suspend fun deleteExpertById(id: Long)
+
+    @Query("UPDATE experts SET is_synced = 1 WHERE id = :id")
+    suspend fun markExpertSynced(id: Long)
 
     @Query("SELECT COUNT(*) FROM experts")
     suspend fun getExpertCount(): Int

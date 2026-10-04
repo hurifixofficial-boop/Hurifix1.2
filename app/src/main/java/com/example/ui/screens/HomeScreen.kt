@@ -72,6 +72,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -137,6 +138,11 @@ import com.example.ui.components.AddNewCategoryDialog
 import com.example.ui.components.AssignExpertWhatsAppConfirmDialog
 import com.example.ui.components.CompletedOrderDetailDialog
 import com.example.ui.components.CustomerAssignWhatsAppDialog
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.Shield
+import com.example.data.sync.SyncStatus
+import com.example.ui.components.AdminControlPanelDialog
 import com.example.ui.components.CustomerCompletionWhatsAppDialog
 import com.example.ui.components.CustomDateRangePickerDialog
 import com.example.ui.components.EditAdminProfileDialog
@@ -228,6 +234,14 @@ fun HomeScreen(
         adminRole = sessionManager.getUserRole()
         adminPhotoUri = sessionManager.getUserPhotoUri()
     }
+
+    // Admin Control Panel & Sync states
+    var showAdminControlPanel by remember { mutableStateOf(false) }
+    val syncStatus by viewModel.syncStatus.collectAsState()
+    val lastSyncTime by viewModel.lastSyncTimestamp.collectAsState()
+    val unsyncedJobs by viewModel.unsyncedJobsCount.collectAsState()
+    val unsyncedExperts by viewModel.unsyncedExpertsCount.collectAsState()
+    val totalPending = unsyncedJobs + unsyncedExperts
 
     // Order Long Press Action & Edit Customer state
     var activeLongPressJob by remember { mutableStateOf<CustomerJobEntity?>(null) }
@@ -418,6 +432,27 @@ fun HomeScreen(
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(start = 6.dp, bottom = 4.dp)
                         )
+
+                        if (sessionManager.isAdmin()) {
+                            NavigationDrawerItem(
+                                label = {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(Icons.Default.Shield, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                                        Text("🛡 User Management & RBAC", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                    }
+                                },
+                                selected = false,
+                                onClick = {
+                                    coroutineScope.launch { drawerState.close() }
+                                    showAdminControlPanel = true
+                                },
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                            Spacer(Modifier.height(3.dp))
+                        }
 
                         NavigationDrawerItem(
                             label = {
@@ -616,6 +651,87 @@ fun HomeScreen(
                             modifier = Modifier.padding(start = 6.dp, bottom = 4.dp)
                         )
 
+                        // Cloud Sync Card (Specification #5: manual Sync Now button with visual sync indicators)
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(
+                                            if (totalPending == 0) Icons.Default.CloudDone else Icons.Default.CloudSync,
+                                            contentDescription = null,
+                                            tint = if (totalPending == 0) Color(0xFF16A34A) else Color(0xFFEA580C),
+                                            modifier = Modifier.size(22.dp)
+                                        )
+                                        Column {
+                                            Text(
+                                                text = "Cloud Sync (Firestore)",
+                                                fontWeight = FontWeight.Bold,
+                                                style = MaterialTheme.typography.bodyMedium
+                                            )
+                                            Text(
+                                                text = if (totalPending == 0) "All data synced with cloud" else "$totalPending items pending sync",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = if (totalPending == 0) Color(0xFF16A34A) else Color(0xFFEA580C)
+                                            )
+                                        }
+                                    }
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = if (totalPending == 0) Color(0xFFDCFCE7) else Color(0xFFFFEDD5)
+                                    ) {
+                                        Text(
+                                            text = if (totalPending == 0) "Synced" else "Pending",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (totalPending == 0) Color(0xFF15803D) else Color(0xFFC2410C),
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+
+                                Button(
+                                    onClick = {
+                                        viewModel.triggerManualSync { _, msg ->
+                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth().height(36.dp),
+                                    shape = RoundedCornerShape(8.dp),
+                                    enabled = syncStatus != SyncStatus.SYNCING,
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                                ) {
+                                    if (syncStatus == SyncStatus.SYNCING) {
+                                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("Syncing...", fontSize = 12.sp)
+                                    } else {
+                                        Icon(Icons.Default.CloudSync, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("Sync Now", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(Modifier.height(8.dp))
+
                         // Dark Theme Toggle Switch Card
                         Surface(
                             shape = RoundedCornerShape(10.dp),
@@ -731,6 +847,39 @@ fun HomeScreen(
                         }
                     },
                     actions = {
+                        // Sync Status Indicator Button
+                        IconButton(onClick = {
+                            viewModel.triggerManualSync { _, msg ->
+                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                            }
+                        }) {
+                            if (syncStatus == SyncStatus.SYNCING) {
+                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            } else if (totalPending > 0) {
+                                Icon(
+                                    imageVector = Icons.Default.CloudSync,
+                                    contentDescription = "Sync Pending ($totalPending)",
+                                    tint = Color(0xFFEA580C)
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.CloudDone,
+                                    contentDescription = "Cloud Synced",
+                                    tint = Color(0xFF16A34A)
+                                )
+                            }
+                        }
+
+                        if (sessionManager.isAdmin()) {
+                            IconButton(onClick = { showAdminControlPanel = true }) {
+                                Icon(
+                                    imageVector = Icons.Default.Shield,
+                                    contentDescription = "Admin Control Panel",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+
                         IconButton(onClick = { viewModel.refreshAllData() }) {
                             Icon(
                                 imageVector = Icons.Default.Refresh,
@@ -917,7 +1066,17 @@ fun HomeScreen(
             rankedExperts = rankedExperts,
             onDismiss = { viewModel.closeFindNearestExperts() },
             onAssignExpert = { ranked ->
-                viewModel.assignExpertToJob(job, ranked)
+                if (!sessionManager.canManageOrders() || sessionManager.isViewOnly()) {
+                    Toast.makeText(context, "Permission Denied: You cannot assign orders (View Only).", Toast.LENGTH_SHORT).show()
+                    return@NearestExpertsDialog
+                }
+                viewModel.assignExpertToJob(
+                    job = job,
+                    ranked = ranked,
+                    onConflict = { conflictError ->
+                        Toast.makeText(context, conflictError, Toast.LENGTH_LONG).show()
+                    }
+                )
                 viewModel.closeFindNearestExperts()
                 // Prompt user to send WhatsApp to expert (does NOT open WhatsApp automatically!)
                 showAssignExpertWhatsAppPopup = Pair(job, ranked)
@@ -1058,16 +1217,34 @@ fun HomeScreen(
             initialPhone = adminPhone,
             initialRole = adminRole,
             initialPhotoUri = adminPhotoUri,
-            onSave = { newName, newPhone, newRole, newPhotoUri ->
+            initialPassword = sessionManager.getUserPassword(),
+            isAdmin = sessionManager.isAdmin(),
+            onSave = { newName, newPhone, newRole, newPhotoUri, newPassword ->
                 sessionManager.updateAdminProfile(newName, newPhone, newRole, newPhotoUri)
+                if (newPassword != null) {
+                    sessionManager.updatePassword(newPassword)
+                    viewModel.updateUserPassword(sessionManager.getUserPhone(), newPassword) { res ->
+                        if (res.isSuccess) {
+                            Toast.makeText(context, "Password updated in cloud!", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
                 adminName = newName
                 adminPhone = newPhone
                 adminRole = newRole
                 adminPhotoUri = newPhotoUri
                 showEditAdminProfileDialog = false
-                Toast.makeText(context, "Admin profile updated successfully!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Profile updated successfully!", Toast.LENGTH_SHORT).show()
             },
             onDismiss = { showEditAdminProfileDialog = false }
+        )
+    }
+
+    // Dialog 11b-2: Admin Control Panel (User Management & RBAC)
+    if (showAdminControlPanel) {
+        AdminControlPanelDialog(
+            viewModel = viewModel,
+            onDismiss = { showAdminControlPanel = false }
         )
     }
 
@@ -1513,7 +1690,12 @@ private fun DispatchOrderFormContent(
                     // Save Button - strictly requires 10 digits as requested
                     Button(
                         onClick = {
-                            viewModel.saveCustomerOrder(status = JobStatus.PENDING) { savedJob ->
+                            viewModel.saveCustomerOrder(
+                                status = JobStatus.PENDING,
+                                onDuplicateWarning = { warning ->
+                                    Toast.makeText(context, warning, Toast.LENGTH_LONG).show()
+                                }
+                            ) { savedJob ->
                                 onOrderSaved(savedJob)
                             }
                         },

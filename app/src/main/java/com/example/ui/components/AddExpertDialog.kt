@@ -1,5 +1,9 @@
 package com.example.ui.components
 
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,20 +18,23 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.LocationOff
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -83,6 +90,151 @@ fun AddExpertDialog(
     var showAddCategoryInlineDialog by remember { mutableStateOf(false) }
     var newCategoryInput by remember { mutableStateOf("") }
 
+    // Dialog popups for Location Permission and Location Disabled (Specification #6)
+    var showLocationPermissionDialog by remember { mutableStateOf(false) }
+    var showLocationDisabledDialog by remember { mutableStateOf(false) }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val fineGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
+        val coarseGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        if (fineGranted || coarseGranted) {
+            // Permission granted, now check if GPS is enabled
+            if (LocationHelper.isLocationEnabled(context)) {
+                LocationHelper.fetchCurrentLocation(
+                    context = context,
+                    onSuccess = { loc ->
+                        latitude = loc.latitude
+                        longitude = loc.longitude
+                        rawLocation = "${loc.latitude}, ${loc.longitude}"
+                        locationError = null
+                    },
+                    onError = { err ->
+                        locationError = err
+                    }
+                )
+            } else {
+                showLocationDisabledDialog = true
+            }
+        } else {
+            locationError = "Location permission is required to detect coordinates automatically."
+        }
+    }
+
+    fun handleLocationClick() {
+        if (!LocationHelper.isLocationPermissionGranted(context)) {
+            showLocationPermissionDialog = true
+        } else if (!LocationHelper.isLocationEnabled(context)) {
+            showLocationDisabledDialog = true
+        } else {
+            LocationHelper.fetchCurrentLocation(
+                context = context,
+                onSuccess = { loc ->
+                    latitude = loc.latitude
+                    longitude = loc.longitude
+                    rawLocation = "${loc.latitude}, ${loc.longitude}"
+                    locationError = null
+                },
+                onError = { err ->
+                    locationError = err
+                }
+            )
+        }
+    }
+
+    // Popup 1: Location Permission Popup
+    if (showLocationPermissionDialog) {
+        AlertDialog(
+            onDismissRequest = { showLocationPermissionDialog = false },
+            icon = {
+                Icon(
+                    Icons.Default.Security,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            },
+            title = {
+                Text(
+                    text = "Allow Location Permission",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text("Hurifix needs your location permission to fetch the expert's current GPS coordinates for accurate dispatch and proximity calculation.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showLocationPermissionDialog = false
+                        permissionLauncher.launch(
+                            arrayOf(
+                                Manifest.permission.ACCESS_FINE_LOCATION,
+                                Manifest.permission.ACCESS_COARSE_LOCATION
+                            )
+                        )
+                    }
+                ) {
+                    Text("Allow Permission")
+                }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(
+                        onClick = {
+                            showLocationPermissionDialog = false
+                            LocationHelper.openAppSettings(context)
+                        }
+                    ) {
+                        Text("App Settings")
+                    }
+                    TextButton(onClick = { showLocationPermissionDialog = false }) {
+                        Text("Cancel")
+                    }
+                }
+            }
+        )
+    }
+
+    // Popup 2: Location Disabled Popup
+    if (showLocationDisabledDialog) {
+        AlertDialog(
+            onDismissRequest = { showLocationDisabledDialog = false },
+            icon = {
+                Icon(
+                    Icons.Default.LocationOff,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error
+                )
+            },
+            title = {
+                Text(
+                    text = "Device Location Disabled",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text("Your phone's GPS / Location service is turned off. Please turn on Location in your phone settings to detect current coordinates.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showLocationDisabledDialog = false
+                        LocationHelper.openLocationSettings(context)
+                    }
+                ) {
+                    Text("Turn On Location")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLocationDisabledDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Inline Add Category Dialog
     if (showAddCategoryInlineDialog) {
         AlertDialog(
             onDismissRequest = { showAddCategoryInlineDialog = false },
@@ -162,7 +314,7 @@ fun AddExpertDialog(
                     singleLine = true
                 )
 
-                // Category Dropdown - Only 2 default categories (Electrician, Plumber) + custom + Add option
+                // Category Dropdown
                 ExposedDropdownMenuBox(
                     expanded = isCategoryExpanded,
                     onExpandedChange = { isCategoryExpanded = !isCategoryExpanded }
@@ -175,7 +327,7 @@ fun AddExpertDialog(
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isCategoryExpanded) },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .menuAnchor()
+                            .menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true)
                     )
                     ExposedDropdownMenu(
                         expanded = isCategoryExpanded,
@@ -191,7 +343,7 @@ fun AddExpertDialog(
                             )
                         }
 
-                        Divider()
+                        HorizontalDivider()
 
                         DropdownMenuItem(
                             text = {
@@ -231,6 +383,7 @@ fun AddExpertDialog(
                 )
 
                 // Location / GPS input: accepts Lat, Lng or Google Maps link
+                // Specification #6: Clicking the current location box / GPS icon triggers permission / location check popups
                 Column {
                     OutlinedTextField(
                         value = rawLocation,
@@ -245,23 +398,14 @@ fun AddExpertDialog(
                                 locationError = "Enter valid Lat, Lng or Google Maps link"
                             }
                         },
-                        label = { Text("Google Location (Coordinates or Maps URL)") },
+                        label = { Text("Google Location (Click to detect GPS)") },
                         trailingIcon = {
-                            IconButton(onClick = {
-                                LocationHelper.fetchCurrentLocation(
-                                    context = context,
-                                    onSuccess = { loc ->
-                                        latitude = loc.latitude
-                                        longitude = loc.longitude
-                                        rawLocation = "${loc.latitude}, ${loc.longitude}"
-                                        locationError = null
-                                    },
-                                    onError = { err ->
-                                        locationError = err
-                                    }
+                            IconButton(onClick = { handleLocationClick() }) {
+                                Icon(
+                                    Icons.Default.MyLocation,
+                                    contentDescription = "Use GPS",
+                                    tint = MaterialTheme.colorScheme.primary
                                 )
-                            }) {
-                                Icon(Icons.Default.MyLocation, contentDescription = "Use GPS")
                             }
                         },
                         isError = locationError != null,
@@ -269,7 +413,7 @@ fun AddExpertDialog(
                             if (locationError != null) {
                                 Text(locationError!!, color = MaterialTheme.colorScheme.error)
                             } else {
-                                Text("Format: 28.5708, 77.3261 or paste Google Maps link")
+                                Text("Format: 28.5708, 77.3261 or tap GPS icon to auto-detect")
                             }
                         },
                         modifier = Modifier
@@ -302,35 +446,40 @@ fun AddExpertDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    if (name.isNotBlank() && phone.isNotBlank()) {
-                        val expert = (initialExpert ?: ExpertEntity(
-                            name = name.trim(),
-                            phone = phone.trim(),
-                            category = category,
-                            address = address.trim().ifBlank { "Local Area" },
-                            latitude = latitude,
-                            longitude = longitude,
-                            isAvailable = isAvailable
-                        )).copy(
-                            name = name.trim(),
-                            phone = phone.trim(),
-                            category = category,
-                            address = address.trim().ifBlank { "Local Area" },
-                            latitude = latitude,
-                            longitude = longitude,
-                            isAvailable = isAvailable
-                        )
-                        onSave(expert)
+                    val cleanPhone = phone.replace(Regex("[^0-9]"), "")
+                    if (name.isBlank() || cleanPhone.length < 10) {
+                        locationError = "Please enter valid expert name and 10-digit phone"
+                        return@Button
                     }
+                    val newExpert = ExpertEntity(
+                        id = initialExpert?.id ?: 0L,
+                        name = name.trim(),
+                        phone = cleanPhone,
+                        category = category.trim(),
+                        address = address.trim().ifBlank { "Address not specified" },
+                        latitude = latitude,
+                        longitude = longitude,
+                        isAvailable = isAvailable,
+                        rating = initialExpert?.rating ?: 4.8f,
+                        ratingSum = initialExpert?.ratingSum ?: 4.8f,
+                        totalRatingsCount = initialExpert?.totalRatingsCount ?: 1,
+                        completedJobsCount = initialExpert?.completedJobsCount ?: 0,
+                        cancelledJobsCount = initialExpert?.cancelledJobsCount ?: 0,
+                        createdAt = initialExpert?.createdAt ?: System.currentTimeMillis(),
+                        last_updated = System.currentTimeMillis()
+                    )
+                    onSave(newExpert)
                 },
-                enabled = name.isNotBlank() && phone.isNotBlank(),
                 modifier = Modifier.testTag("save_expert_button")
             ) {
-                Text("Save Expert")
+                Text(if (initialExpert == null) "Add Expert" else "Save Changes")
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.testTag("cancel_expert_button")
+            ) {
                 Text("Cancel")
             }
         }

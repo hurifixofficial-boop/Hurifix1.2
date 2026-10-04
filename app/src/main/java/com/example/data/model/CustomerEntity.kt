@@ -18,7 +18,9 @@ data class CustomerEntity(
     val longitude: Double,
     val serviceRequired: String = "",
     val issueDescription: String = "",
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val last_updated: Long = System.currentTimeMillis(),
+    val is_synced: Boolean = false
 ) {
     /**
      * Convenience property returning contact number

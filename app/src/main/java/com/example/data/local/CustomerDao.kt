@@ -26,6 +26,15 @@ interface CustomerDao {
     @Query("SELECT * FROM customers WHERE name LIKE '%' || :query || '%' OR contact LIKE '%' || :query || '%'")
     fun searchCustomers(query: String): Flow<List<CustomerEntity>>
 
+    @Query("SELECT * FROM customers WHERE is_synced = 0")
+    suspend fun getUnsyncedCustomers(): List<CustomerEntity>
+
+    @Query("SELECT * FROM customers")
+    suspend fun getAllCustomersSync(): List<CustomerEntity>
+
+    @Query("UPDATE customers SET is_synced = 1 WHERE id = :id")
+    suspend fun markCustomerSynced(id: Long)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCustomer(customer: CustomerEntity): Long
 

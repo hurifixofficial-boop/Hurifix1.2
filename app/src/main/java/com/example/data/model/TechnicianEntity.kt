@@ -20,7 +20,9 @@ data class TechnicianEntity(
     val isAvailable: Boolean = true,
     val rating: Float = 4.8f,
     val completedJobsCount: Int = 0,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val last_updated: Long = System.currentTimeMillis(),
+    val is_synced: Boolean = false
 ) {
     /**
      * Convenience property returning contact number

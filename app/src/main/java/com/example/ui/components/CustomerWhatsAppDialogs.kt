@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.LocationOff
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonRemove
@@ -40,14 +41,20 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import coil.compose.AsyncImage
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Divider
 import androidx.compose.material3.Icon
@@ -1202,7 +1209,9 @@ fun EditAdminProfileDialog(
     initialPhone: String,
     initialRole: String,
     initialPhotoUri: String? = null,
-    onSave: (name: String, phone: String, role: String, photoUri: String?) -> Unit,
+    initialPassword: String = "",
+    isAdmin: Boolean = true,
+    onSave: (name: String, phone: String, role: String, photoUri: String?, newPassword: String?) -> Unit,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -1210,6 +1219,10 @@ fun EditAdminProfileDialog(
     var adminPhone by remember { mutableStateOf(initialPhone) }
     var adminRole by remember { mutableStateOf(initialRole) }
     var photoUri by remember { mutableStateOf<String?>(initialPhotoUri) }
+    var newPassword by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
+    var passwordError by remember { mutableStateOf<String?>(null) }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -1404,12 +1417,91 @@ fun EditAdminProfileDialog(
                     placeholder = { Text("e.g. Operations Manager, Admin") },
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                HorizontalDivider()
+
+                Text(
+                    text = "Update Login Password",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+
+                Text(
+                    text = "Leave blank if you don't wish to change your password.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                OutlinedTextField(
+                    value = newPassword,
+                    onValueChange = {
+                        newPassword = it
+                        passwordError = null
+                    },
+                    label = { Text("New Password (Min 4 chars)") },
+                    leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                    trailingIcon = {
+                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                            Icon(
+                                if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = null
+                            )
+                        }
+                    },
+                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                if (newPassword.isNotBlank()) {
+                    OutlinedTextField(
+                        value = confirmPassword,
+                        onValueChange = {
+                            confirmPassword = it
+                            passwordError = null
+                        },
+                        label = { Text("Confirm New Password") },
+                        leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        singleLine = true,
+                        isError = passwordError != null || (confirmPassword.isNotBlank() && confirmPassword != newPassword),
+                        supportingText = {
+                            if (confirmPassword.isNotBlank() && confirmPassword != newPassword) {
+                                Text("Passwords do not match", color = MaterialTheme.colorScheme.error)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                passwordError?.let { err ->
+                    Text(err, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
             }
         },
         confirmButton = {
             Button(
                 onClick = {
-                    onSave(adminName.trim(), cleanPhone, adminRole.trim(), photoUri)
+                    if (newPassword.isNotBlank()) {
+                        if (newPassword.length < 4) {
+                            passwordError = "Password must be at least 4 characters"
+                            return@Button
+                        }
+                        if (newPassword != confirmPassword) {
+                            passwordError = "Passwords do not match"
+                            return@Button
+                        }
+                    }
+                    onSave(
+                        adminName.trim(),
+                        cleanPhone,
+                        adminRole.trim(),
+                        photoUri,
+                        newPassword.ifBlank { null }
+                    )
                     onDismiss()
                 },
                 enabled = adminName.isNotBlank() && isPhoneValid,
@@ -1425,3 +1517,4 @@ fun EditAdminProfileDialog(
         }
     )
 }
+

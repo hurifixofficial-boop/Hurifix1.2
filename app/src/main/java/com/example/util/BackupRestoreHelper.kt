@@ -63,6 +63,8 @@ object BackupRestoreHelper {
             obj.put("completedJobsCount", exp.completedJobsCount)
             obj.put("cancelledJobsCount", exp.cancelledJobsCount)
             obj.put("createdAt", exp.createdAt)
+            obj.put("last_updated", exp.last_updated)
+            obj.put("is_synced", exp.is_synced)
             expertsArray.put(obj)
         }
         root.put("experts", expertsArray)
@@ -92,6 +94,8 @@ object BackupRestoreHelper {
             obj.put("isCustomerNotifiedOnAssign", job.isCustomerNotifiedOnAssign)
             obj.put("isCustomerNotifiedOnCompletion", job.isCustomerNotifiedOnCompletion)
             obj.put("assignMessageLaterDismissedAt", job.assignMessageLaterDismissedAt ?: JSONObject.NULL)
+            obj.put("last_updated", job.last_updated)
+            obj.put("is_synced", job.is_synced)
             jobsArray.put(obj)
         }
         root.put("jobs", jobsArray)
@@ -173,7 +177,9 @@ object BackupRestoreHelper {
                         totalRatingsCount = obj.optInt("totalRatingsCount", 1),
                         completedJobsCount = obj.optInt("completedJobsCount", 0),
                         cancelledJobsCount = obj.optInt("cancelledJobsCount", 0),
-                        createdAt = obj.optLong("createdAt", System.currentTimeMillis())
+                        createdAt = obj.optLong("createdAt", System.currentTimeMillis()),
+                        last_updated = obj.optLong("last_updated", System.currentTimeMillis()),
+                        is_synced = obj.optBoolean("is_synced", false)
                     )
                 )
             }
@@ -206,7 +212,9 @@ object BackupRestoreHelper {
                         isExpertNotified = obj.optBoolean("isExpertNotified", false),
                         isCustomerNotifiedOnAssign = obj.optBoolean("isCustomerNotifiedOnAssign", false),
                         isCustomerNotifiedOnCompletion = obj.optBoolean("isCustomerNotifiedOnCompletion", false),
-                        assignMessageLaterDismissedAt = if (obj.isNull("assignMessageLaterDismissedAt")) null else obj.optLong("assignMessageLaterDismissedAt")
+                        assignMessageLaterDismissedAt = if (obj.isNull("assignMessageLaterDismissedAt")) null else obj.optLong("assignMessageLaterDismissedAt"),
+                        last_updated = obj.optLong("last_updated", System.currentTimeMillis()),
+                        is_synced = obj.optBoolean("is_synced", false)
                     )
                 )
             }

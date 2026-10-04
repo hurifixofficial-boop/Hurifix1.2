@@ -7,16 +7,19 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.model.CustomerJobEntity
 import com.example.data.model.ExpertCategoryEntity
 import com.example.data.model.ExpertEntity
+import com.example.data.model.HurifixUser
 import com.example.data.model.JobStatus
 import com.example.data.model.RankedExpert
 import com.example.data.repository.DispatchRepository
+import com.example.data.sync.SyncStatus
 import com.example.util.LocationHelper
 import com.example.util.WhatsAppHelper
+import com.google.firebase.firestore.ListenerRegistration
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.regex.Pattern
@@ -67,6 +70,23 @@ class DispatchViewModel(private val repository: DispatchRepository) : ViewModel(
     val deletedExperts: StateFlow<List<ExpertEntity>> = repository.deletedExperts
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    // All Users for Admin Control Panel
+    val allStaffUsers: StateFlow<List<HurifixUser>> = (repository.firestoreService?.getAllUsersFlow() ?: flowOf(emptyList()))
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // Sync state
+    val syncStatus: StateFlow<SyncStatus> = (repository.syncManager?.syncStatus ?: flowOf(SyncStatus.IDLE))
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SyncStatus.IDLE)
+
+    val lastSyncTimestamp: StateFlow<Long> = (repository.syncManager?.lastSyncTimestamp ?: flowOf(System.currentTimeMillis()))
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), System.currentTimeMillis())
+
+    val unsyncedJobsCount: StateFlow<Int> = (repository.syncManager?.unsyncedJobsCount ?: flowOf(0))
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    val unsyncedExpertsCount: StateFlow<Int> = (repository.syncManager?.unsyncedExpertsCount ?: flowOf(0))
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
     private val _customerForm = MutableStateFlow(CustomerFormState())
     val customerForm: StateFlow<CustomerFormState> = _customerForm.asStateFlow()
 
@@ -82,12 +102,14 @@ class DispatchViewModel(private val repository: DispatchRepository) : ViewModel(
     private val _statusMessage = MutableStateFlow<String?>(null)
     val statusMessage: StateFlow<String?> = _statusMessage.asStateFlow()
 
-    // Active customer job selected for finding nearest experts
     private val _activeJobForNearestExperts = MutableStateFlow<CustomerJobEntity?>(null)
     val activeJobForNearestExperts: StateFlow<CustomerJobEntity?> = _activeJobForNearestExperts.asStateFlow()
 
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+
+    // Realtime listener for active user session (detecting blocks / permission updates)
+    private var userSessionListener: ListenerRegistration? = null
 
     init {
         viewModelScope.launch {
@@ -99,13 +121,37 @@ class DispatchViewModel(private val repository: DispatchRepository) : ViewModel(
         }
     }
 
-    fun onUserLoggedIn(phone: String) {
+    override fun onCleared() {
+        super.onCleared()
+        userSessionListener?.remove()
+    }
+
+    fun onUserLoggedIn(
+        phone: String,
+        onSessionBlocked: () -> Unit = {},
+        onPermissionsUpdated: (HurifixUser) -> Unit = {}
+    ) {
         val cleanPhone = phone.replace(Regex("[^0-9]"), "")
         repository.setCurrentUser(cleanPhone)
+
+        // Attach real-time Firestore session listener
+        userSessionListener?.remove()
+        userSessionListener = repository.firestoreService?.listenToUserSession(
+            phone = cleanPhone,
+            onUpdate = { user ->
+                onPermissionsUpdated(user)
+            },
+            onBlocked = {
+                onSessionBlocked()
+            }
+        )
+
         viewModelScope.launch {
             try {
                 repository.ensureDefaultCategoriesForCurrentUser()
                 repository.purgeRecycleBinOlderThan30Days()
+                // Initial background sync
+                repository.syncManager?.syncNow()
             } catch (_: Exception) {
             }
         }
@@ -117,6 +163,8 @@ class DispatchViewModel(private val repository: DispatchRepository) : ViewModel(
     }
 
     fun onUserLoggedOut() {
+        userSessionListener?.remove()
+        userSessionListener = null
         repository.setCurrentUser("")
         _customerForm.value = CustomerFormState()
         _activeJobForNearestExperts.value = null
@@ -125,12 +173,27 @@ class DispatchViewModel(private val repository: DispatchRepository) : ViewModel(
         _currentOrderStatusTab.value = OrderStatusTab.PENDING
     }
 
+    fun triggerManualSync(onFinished: ((Boolean, String) -> Unit)? = null) {
+        viewModelScope.launch {
+            val result = repository.syncManager?.syncNow()
+            if (result != null && result.isSuccess) {
+                val msg = result.getOrDefault("Sync complete!")
+                _statusMessage.value = msg
+                onFinished?.invoke(true, msg)
+            } else {
+                val err = result?.exceptionOrNull()?.localizedMessage ?: "Sync error"
+                _statusMessage.value = "Sync failed: $err"
+                onFinished?.invoke(false, err)
+            }
+        }
+    }
+
     fun refreshAllData() {
         viewModelScope.launch {
             _isRefreshing.value = true
-            kotlinx.coroutines.delay(650)
+            repository.syncManager?.syncNow()
             _isRefreshing.value = false
-            _statusMessage.value = "Data refreshed!"
+            _statusMessage.value = "Data synchronized with cloud!"
         }
     }
 
@@ -275,26 +338,43 @@ class DispatchViewModel(private val repository: DispatchRepository) : ViewModel(
     }
 
     /**
-     * Saves new customer order into database.
-     * Address is completely optional as requested.
+     * Saves new customer order with Duplicate Customer Check.
+     * Specification #4: Before saving a new order, search Firestore & local DB to verify
+     * if an order with the same customer phone number exists within the last 4 hours.
+     * If found, display a warning toast and block duplicate creation.
      */
     fun saveCustomerOrder(
         status: JobStatus = JobStatus.PENDING,
+        onDuplicateWarning: (String) -> Unit = {},
         onComplete: (CustomerJobEntity) -> Unit
     ) {
         val form = _customerForm.value
-        val newJob = CustomerJobEntity(
-            customerName = form.name.ifBlank { "Customer" },
-            customerPhone = form.phone.ifBlank { "" },
-            serviceType = form.serviceType.ifBlank { "General Repair" },
-            issueDescription = form.issueDescription.ifBlank { "Service requested" },
-            address = form.address.ifBlank { "Address not specified" },
-            latitude = form.latitude,
-            longitude = form.longitude,
-            status = status.name
-        )
+        val cleanPhone = form.phone.replace(Regex("[^0-9]"), "")
 
         viewModelScope.launch {
+            if (cleanPhone.length >= 10) {
+                val isDuplicate = repository.checkDuplicateCustomerOrder(cleanPhone)
+                if (isDuplicate) {
+                    val warning = "Duplicate Order Detected! An active order for customer ($cleanPhone) already exists within the last 4 hours."
+                    _statusMessage.value = warning
+                    onDuplicateWarning(warning)
+                    return@launch
+                }
+            }
+
+            val newJob = CustomerJobEntity(
+                customerName = form.name.ifBlank { "Customer" },
+                customerPhone = cleanPhone.ifBlank { form.phone },
+                serviceType = form.serviceType.ifBlank { "General Repair" },
+                issueDescription = form.issueDescription.ifBlank { "Service requested" },
+                address = form.address.ifBlank { "Address not specified" },
+                latitude = form.latitude,
+                longitude = form.longitude,
+                status = status.name,
+                createdAt = System.currentTimeMillis(),
+                last_updated = System.currentTimeMillis()
+            )
+
             val id = repository.insertJob(newJob)
             val insertedJob = newJob.copy(id = id)
             _customerForm.value = CustomerFormState() // Reset form
@@ -311,25 +391,33 @@ class DispatchViewModel(private val repository: DispatchRepository) : ViewModel(
     }
 
     /**
-     * Assigns selected expert to the given job.
-     * Moves order to PROCESSING tab!
-     * NOTE: Does NOT open WhatsApp automatically. A dedicated popup lets user choose!
+     * Assigns selected expert to the given job using Firestore Real-Time Transaction Lock.
+     * Specification #4: If two users attempt to assign a technician to the same order simultaneously,
+     * only the first assignment succeeds.
      */
     fun assignExpertToJob(
         job: CustomerJobEntity,
-        ranked: RankedExpert
+        ranked: RankedExpert,
+        onConflict: (String) -> Unit = {}
     ) {
         viewModelScope.launch {
-            repository.assignJobToExpert(
+            val result = repository.assignJobToExpertWithLock(
                 jobId = job.id,
                 expert = ranked.expert,
                 distanceKm = ranked.distanceKm
             )
-            _activeJobForNearestExperts.value = null
-            _currentMainTab.value = MainTab.CUSTOMER_ORDERS
-            _currentCustomerSubTab.value = CustomerSubTab.ORDERS
-            _currentOrderStatusTab.value = OrderStatusTab.PROCESSING
-            _statusMessage.value = "Expert ${ranked.expert.name} assigned! Moved to Processing."
+
+            if (result.isSuccess) {
+                _activeJobForNearestExperts.value = null
+                _currentMainTab.value = MainTab.CUSTOMER_ORDERS
+                _currentCustomerSubTab.value = CustomerSubTab.ORDERS
+                _currentOrderStatusTab.value = OrderStatusTab.PROCESSING
+                _statusMessage.value = "Expert ${ranked.expert.name} assigned! Moved to Processing."
+            } else {
+                val errorMsg = result.exceptionOrNull()?.localizedMessage ?: "Assignment failed due to conflict"
+                _statusMessage.value = errorMsg
+                onConflict(errorMsg)
+            }
         }
     }
 
@@ -372,9 +460,6 @@ class DispatchViewModel(private val repository: DispatchRepository) : ViewModel(
         }
     }
 
-    /**
-     * Completes or cancels order and records expert review / rating.
-     */
     fun completeOrCancelJobWithReview(
         job: CustomerJobEntity,
         isCompleted: Boolean,
@@ -536,6 +621,87 @@ class DispatchViewModel(private val repository: DispatchRepository) : ViewModel(
         viewModelScope.launch {
             repository.restoreDatabase(jobs, experts, categories)
             _statusMessage.value = "Backup successfully restored! (${jobs.size} orders, ${experts.size} experts)"
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Admin Control Panel & User Management
+    // ---------------------------------------------------------------------------------------------
+
+    fun createStaffMember(
+        name: String,
+        phone: String,
+        password: String,
+        canAddExperts: Boolean,
+        canManageOrders: Boolean,
+        canAddCustomers: Boolean,
+        viewOnly: Boolean,
+        onResult: (Result<Unit>) -> Unit
+    ) {
+        val cleanPhone = phone.replace(Regex("[^0-9]"), "")
+        if (cleanPhone.length < 10) {
+            onResult(Result.failure(Exception("Enter a valid 10-digit mobile number")))
+            return
+        }
+        if (name.isBlank()) {
+            onResult(Result.failure(Exception("Enter staff member's name")))
+            return
+        }
+        if (password.length < 4) {
+            onResult(Result.failure(Exception("Password must be at least 4 characters")))
+            return
+        }
+
+        viewModelScope.launch {
+            val user = HurifixUser(
+                phone = cleanPhone,
+                name = name.trim(),
+                password = password.trim(),
+                role = HurifixUser.ROLE_STAFF,
+                is_blocked = false,
+                can_add_experts = canAddExperts,
+                can_manage_orders = canManageOrders,
+                can_add_customers = canAddCustomers,
+                view_only = viewOnly,
+                created_at = System.currentTimeMillis(),
+                last_login = 0L
+            )
+            val res = repository.firestoreService?.saveStaffUser(user) ?: Result.failure(Exception("Firestore unavailable"))
+            onResult(res)
+        }
+    }
+
+    fun toggleUserBlocked(phone: String, currentBlocked: Boolean) {
+        viewModelScope.launch {
+            repository.firestoreService?.setUserBlocked(phone, !currentBlocked)
+            _statusMessage.value = if (!currentBlocked) "User account blocked!" else "User account unblocked."
+        }
+    }
+
+    fun updateUserPermissions(
+        phone: String,
+        canAddExperts: Boolean,
+        canManageOrders: Boolean,
+        canAddCustomers: Boolean,
+        viewOnly: Boolean
+    ) {
+        viewModelScope.launch {
+            repository.firestoreService?.updateUserPermissions(
+                phone = phone,
+                canAddExperts = canAddExperts,
+                canManageOrders = canManageOrders,
+                canAddCustomers = canAddCustomers,
+                viewOnly = viewOnly
+            )
+            _statusMessage.value = "Permissions updated for $phone"
+        }
+    }
+
+    fun updateUserPassword(phone: String, newPassword: String, onResult: (Result<Unit>) -> Unit) {
+        viewModelScope.launch {
+            val res = repository.firestoreService?.updateUserPassword(phone, newPassword)
+                ?: Result.failure(Exception("Firestore service unavailable"))
+            onResult(res)
         }
     }
 }

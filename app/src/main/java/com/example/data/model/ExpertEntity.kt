@@ -22,7 +22,9 @@ data class ExpertEntity(
     val isWelcomeMessageSent: Boolean = false,
     val isDeleted: Boolean = false,
     val deletedAt: Long? = null,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val last_updated: Long = System.currentTimeMillis(),
+    val is_synced: Boolean = false
 )
 
 data class RankedExpert(

@@ -13,8 +13,20 @@ interface ExpertCategoryDao {
     @Query("SELECT * FROM expert_categories ORDER BY isDefault DESC, name ASC")
     fun getAllCategories(): Flow<List<ExpertCategoryEntity>>
 
+    @Query("SELECT * FROM expert_categories")
+    suspend fun getAllCategoriesSync(): List<ExpertCategoryEntity>
+
+    @Query("SELECT * FROM expert_categories WHERE is_synced = 0")
+    suspend fun getUnsyncedCategories(): List<ExpertCategoryEntity>
+
+    @Query("UPDATE expert_categories SET is_synced = 1 WHERE id = :id")
+    suspend fun markCategorySynced(id: Long)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCategory(category: ExpertCategoryEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertCategories(categories: List<ExpertCategoryEntity>)
 
     @Delete
     suspend fun deleteCategory(category: ExpertCategoryEntity)

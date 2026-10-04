@@ -1,6 +1,7 @@
 package com.example
 
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -13,6 +14,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import com.example.data.sync.SyncManager
 import com.example.ui.DispatchViewModel
 import com.example.ui.DispatchViewModelFactory
 import com.example.ui.screens.AuthScreen
@@ -39,23 +41,52 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         sessionManager = SessionManager(this)
+
+        // Schedule background sync worker
+        SyncManager.scheduleBackgroundSync(this)
+
         enableEdgeToEdge()
         setContent {
             var isDarkMode by remember { mutableStateOf(sessionManager.isDarkModeEnabled()) }
+            var currentDestination by remember { mutableStateOf(AppDestination.SPLASH) }
+
+            fun setupUserSession() {
+                viewModel.onUserLoggedIn(
+                    phone = sessionManager.getUserPhone(),
+                    onSessionBlocked = {
+                        runOnUiThread {
+                            sessionManager.logout()
+                            viewModel.onUserLoggedOut()
+                            currentDestination = AppDestination.AUTH
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Access Revoked! Your account has been blocked by Admin.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    },
+                    onPermissionsUpdated = { updatedUser ->
+                        sessionManager.updatePermissions(
+                            canAddExperts = updatedUser.can_add_experts,
+                            canManageOrders = updatedUser.can_manage_orders,
+                            canAddCustomers = updatedUser.can_add_customers,
+                            viewOnly = updatedUser.view_only
+                        )
+                    }
+                )
+            }
 
             MyApplicationTheme(darkTheme = isDarkMode) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    var currentDestination by remember { mutableStateOf(AppDestination.SPLASH) }
-
                     when (currentDestination) {
                         AppDestination.SPLASH -> {
                             SplashScreen(
                                 onSplashFinished = {
                                     if (sessionManager.isLoggedIn() && sessionManager.getUserPhone().isNotBlank()) {
-                                        viewModel.onUserLoggedIn(sessionManager.getUserPhone())
+                                        setupUserSession()
                                         currentDestination = AppDestination.HOME
                                     } else {
                                         viewModel.onUserLoggedOut()
@@ -69,7 +100,7 @@ class MainActivity : ComponentActivity() {
                             AuthScreen(
                                 sessionManager = sessionManager,
                                 onLoginSuccess = {
-                                    viewModel.onUserLoggedIn(sessionManager.getUserPhone())
+                                    setupUserSession()
                                     currentDestination = AppDestination.HOME
                                 }
                             )
@@ -85,6 +116,7 @@ class MainActivity : ComponentActivity() {
                                     sessionManager.setDarkModeEnabled(newMode)
                                 },
                                 onLogout = {
+                                    sessionManager.logout()
                                     viewModel.onUserLoggedOut()
                                     currentDestination = AppDestination.AUTH
                                 }
