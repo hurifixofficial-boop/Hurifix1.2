@@ -54,9 +54,11 @@ class MainActivity : ComponentActivity() {
                         AppDestination.SPLASH -> {
                             SplashScreen(
                                 onSplashFinished = {
-                                    if (sessionManager.isLoggedIn()) {
+                                    if (sessionManager.isLoggedIn() && sessionManager.getUserPhone().isNotBlank()) {
+                                        viewModel.onUserLoggedIn(sessionManager.getUserPhone())
                                         currentDestination = AppDestination.HOME
                                     } else {
+                                        viewModel.onUserLoggedOut()
                                         currentDestination = AppDestination.AUTH
                                     }
                                 }
@@ -67,6 +69,7 @@ class MainActivity : ComponentActivity() {
                             AuthScreen(
                                 sessionManager = sessionManager,
                                 onLoginSuccess = {
+                                    viewModel.onUserLoggedIn(sessionManager.getUserPhone())
                                     currentDestination = AppDestination.HOME
                                 }
                             )
@@ -82,6 +85,7 @@ class MainActivity : ComponentActivity() {
                                     sessionManager.setDarkModeEnabled(newMode)
                                 },
                                 onLogout = {
+                                    viewModel.onUserLoggedOut()
                                     currentDestination = AppDestination.AUTH
                                 }
                             )

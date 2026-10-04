@@ -218,9 +218,16 @@ fun HomeScreen(
     // Admin profile state & dialog
     var showEditAdminProfileDialog by remember { mutableStateOf(false) }
     var adminName by remember { mutableStateOf(sessionManager.getUserName()) }
-    var adminPhone by remember { mutableStateOf(sessionManager.getUserPhone().ifBlank { "9876543210" }) }
+    var adminPhone by remember { mutableStateOf(sessionManager.getUserPhone()) }
     var adminRole by remember { mutableStateOf(sessionManager.getUserRole()) }
     var adminPhotoUri by remember { mutableStateOf(sessionManager.getUserPhotoUri()) }
+
+    LaunchedEffect(sessionManager.getUserPhone()) {
+        adminName = sessionManager.getUserName()
+        adminPhone = sessionManager.getUserPhone()
+        adminRole = sessionManager.getUserRole()
+        adminPhotoUri = sessionManager.getUserPhotoUri()
+    }
 
     // Order Long Press Action & Edit Customer state
     var activeLongPressJob by remember { mutableStateOf<CustomerJobEntity?>(null) }

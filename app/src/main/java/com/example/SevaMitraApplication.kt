@@ -1,8 +1,8 @@
 package com.example
 
 import android.app.Application
-import com.example.data.local.AppDatabase
 import com.example.data.repository.DispatchRepository
+import com.example.util.SessionManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -11,21 +11,22 @@ import kotlinx.coroutines.launch
 class SevaMitraApplication : Application() {
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    val database by lazy { AppDatabase.getDatabase(this) }
-    val repository by lazy {
+    val repository: DispatchRepository by lazy {
+        val session = SessionManager(this)
+        val initialPhone = if (session.isLoggedIn()) session.getUserPhone() else ""
         DispatchRepository(
-            expertDao = database.expertDao(),
-            jobDao = database.customerJobDao(),
-            expertCategoryDao = database.expertCategoryDao(),
-            technicianDao = database.technicianDao(),
-            customerDao = database.customerDao()
+            context = this,
+            initialUserPhone = initialPhone
         )
     }
 
     override fun onCreate() {
         super.onCreate()
-        applicationScope.launch {
-            repository.seedSampleExpertsIfEmpty()
+        val session = SessionManager(this)
+        if (session.isLoggedIn() && session.getUserPhone().isNotBlank()) {
+            applicationScope.launch {
+                repository.ensureDefaultCategoriesForCurrentUser()
+            }
         }
     }
 }

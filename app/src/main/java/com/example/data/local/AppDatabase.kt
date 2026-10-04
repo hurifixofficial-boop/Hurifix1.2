@@ -29,20 +29,19 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun expertCategoryDao(): ExpertCategoryDao
 
     companion object {
-        @Volatile
-        private var INSTANCE: AppDatabase? = null
+        private val INSTANCES = java.util.concurrent.ConcurrentHashMap<String, AppDatabase>()
 
-        fun getDatabase(context: Context): AppDatabase {
-            return INSTANCE ?: synchronized(this) {
-                val instance = Room.databaseBuilder(
+        fun getDatabase(context: Context, userPhone: String = "default"): AppDatabase {
+            val cleanPhone = userPhone.replace(Regex("[^0-9]"), "").ifBlank { "default" }
+            val dbName = "hurifix_data_${cleanPhone}.db"
+            return INSTANCES.computeIfAbsent(dbName) {
+                Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
-                    "sevamitra_dispatch.db"
+                    dbName
                 )
                     .fallbackToDestructiveMigration()
                     .build()
-                INSTANCE = instance
-                instance
             }
         }
     }

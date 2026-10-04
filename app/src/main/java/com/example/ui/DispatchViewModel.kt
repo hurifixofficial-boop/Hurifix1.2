@@ -92,15 +92,37 @@ class DispatchViewModel(private val repository: DispatchRepository) : ViewModel(
     init {
         viewModelScope.launch {
             try {
-                val existing = repository.allCategories.first()
-                if (existing.isEmpty()) {
-                    repository.insertCategory("Electrician", isDefault = true)
-                    repository.insertCategory("Plumber", isDefault = true)
-                }
+                repository.ensureDefaultCategoriesForCurrentUser()
                 repository.purgeRecycleBinOlderThan30Days()
             } catch (_: Exception) {
             }
         }
+    }
+
+    fun onUserLoggedIn(phone: String) {
+        val cleanPhone = phone.replace(Regex("[^0-9]"), "")
+        repository.setCurrentUser(cleanPhone)
+        viewModelScope.launch {
+            try {
+                repository.ensureDefaultCategoriesForCurrentUser()
+                repository.purgeRecycleBinOlderThan30Days()
+            } catch (_: Exception) {
+            }
+        }
+        _customerForm.value = CustomerFormState()
+        _activeJobForNearestExperts.value = null
+        _currentMainTab.value = MainTab.CUSTOMER_ORDERS
+        _currentCustomerSubTab.value = CustomerSubTab.DISPATCH_ORDER
+        _currentOrderStatusTab.value = OrderStatusTab.PENDING
+    }
+
+    fun onUserLoggedOut() {
+        repository.setCurrentUser("")
+        _customerForm.value = CustomerFormState()
+        _activeJobForNearestExperts.value = null
+        _currentMainTab.value = MainTab.CUSTOMER_ORDERS
+        _currentCustomerSubTab.value = CustomerSubTab.DISPATCH_ORDER
+        _currentOrderStatusTab.value = OrderStatusTab.PENDING
     }
 
     fun refreshAllData() {
@@ -263,7 +285,7 @@ class DispatchViewModel(private val repository: DispatchRepository) : ViewModel(
         val form = _customerForm.value
         val newJob = CustomerJobEntity(
             customerName = form.name.ifBlank { "Customer" },
-            customerPhone = form.phone.ifBlank { "9876543210" },
+            customerPhone = form.phone.ifBlank { "" },
             serviceType = form.serviceType.ifBlank { "General Repair" },
             issueDescription = form.issueDescription.ifBlank { "Service requested" },
             address = form.address.ifBlank { "Address not specified" },

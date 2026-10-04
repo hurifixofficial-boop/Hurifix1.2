@@ -1,5 +1,7 @@
 package com.example.data.repository
 
+import android.content.Context
+import com.example.data.local.AppDatabase
 import com.example.data.local.CustomerDao
 import com.example.data.local.CustomerJobDao
 import com.example.data.local.ExpertCategoryDao
@@ -13,89 +15,225 @@ import com.example.data.model.JobStatus
 import com.example.data.model.RankedExpert
 import com.example.data.model.TechnicianEntity
 import com.example.util.LocationHelper
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class DispatchRepository(
-    private val expertDao: ExpertDao,
-    private val jobDao: CustomerJobDao,
-    private val expertCategoryDao: ExpertCategoryDao,
-    private val technicianDao: TechnicianDao? = null,
-    private val customerDao: CustomerDao? = null
+    private val context: Context? = null,
+    initialUserPhone: String = "",
+    private val fallbackExpertDao: ExpertDao? = null,
+    private val fallbackJobDao: CustomerJobDao? = null,
+    private val fallbackCategoryDao: ExpertCategoryDao? = null,
+    private val fallbackTechnicianDao: TechnicianDao? = null,
+    private val fallbackCustomerDao: CustomerDao? = null
 ) {
-    val allExperts: Flow<List<ExpertEntity>> = expertDao.getAllExperts()
-    val availableExperts: Flow<List<ExpertEntity>> = expertDao.getAvailableExperts()
-    val allJobs: Flow<List<CustomerJobEntity>> = jobDao.getAllJobs()
-    val allCategories: Flow<List<ExpertCategoryEntity>> = expertCategoryDao.getAllCategories()
-    val deletedJobs: Flow<List<CustomerJobEntity>> = jobDao.getDeletedJobs()
-    val deletedExperts: Flow<List<ExpertEntity>> = expertDao.getDeletedExperts()
+    // Secondary constructor for direct DAO usage / unit tests
+    constructor(
+        expertDao: ExpertDao,
+        jobDao: CustomerJobDao,
+        expertCategoryDao: ExpertCategoryDao,
+        technicianDao: TechnicianDao? = null,
+        customerDao: CustomerDao? = null
+    ) : this(
+        context = null,
+        initialUserPhone = "test_user",
+        fallbackExpertDao = expertDao,
+        fallbackJobDao = jobDao,
+        fallbackCategoryDao = expertCategoryDao,
+        fallbackTechnicianDao = technicianDao,
+        fallbackCustomerDao = customerDao
+    )
 
-    fun getJobsForExpert(expertId: Long): Flow<List<CustomerJobEntity>> = jobDao.getJobsForExpert(expertId)
+    private val _currentUserPhone = MutableStateFlow(initialUserPhone.replace(Regex("[^0-9]"), ""))
+    val currentUserPhone: StateFlow<String> = _currentUserPhone.asStateFlow()
+
+    fun setCurrentUser(phone: String) {
+        _currentUserPhone.value = phone.replace(Regex("[^0-9]"), "")
+    }
+
+    private fun getDb(): AppDatabase? {
+        val ctx = context ?: return null
+        val phone = _currentUserPhone.value.ifBlank { "default" }
+        return AppDatabase.getDatabase(ctx, phone)
+    }
+
+    private fun getExpertDao(): ExpertDao {
+        return getDb()?.expertDao() ?: fallbackExpertDao ?: throw IllegalStateException("No ExpertDao available")
+    }
+
+    private fun getJobDao(): CustomerJobDao {
+        return getDb()?.customerJobDao() ?: fallbackJobDao ?: throw IllegalStateException("No CustomerJobDao available")
+    }
+
+    private fun getCategoryDao(): ExpertCategoryDao {
+        return getDb()?.expertCategoryDao() ?: fallbackCategoryDao ?: throw IllegalStateException("No CategoryDao available")
+    }
+
+    private fun getTechnicianDao(): TechnicianDao? {
+        return getDb()?.technicianDao() ?: fallbackTechnicianDao
+    }
+
+    private fun getCustomerDao(): CustomerDao? {
+        return getDb()?.customerDao() ?: fallbackCustomerDao
+    }
+
+    val allExperts: Flow<List<ExpertEntity>> = _currentUserPhone.flatMapLatest { phone ->
+        if (context == null) {
+            fallbackExpertDao?.getAllExperts() ?: flowOf(emptyList())
+        } else if (phone.isBlank()) {
+            flowOf(emptyList())
+        } else {
+            AppDatabase.getDatabase(context, phone).expertDao().getAllExperts()
+        }
+    }
+
+    val availableExperts: Flow<List<ExpertEntity>> = _currentUserPhone.flatMapLatest { phone ->
+        if (context == null) {
+            fallbackExpertDao?.getAvailableExperts() ?: flowOf(emptyList())
+        } else if (phone.isBlank()) {
+            flowOf(emptyList())
+        } else {
+            AppDatabase.getDatabase(context, phone).expertDao().getAvailableExperts()
+        }
+    }
+
+    val allJobs: Flow<List<CustomerJobEntity>> = _currentUserPhone.flatMapLatest { phone ->
+        if (context == null) {
+            fallbackJobDao?.getAllJobs() ?: flowOf(emptyList())
+        } else if (phone.isBlank()) {
+            flowOf(emptyList())
+        } else {
+            AppDatabase.getDatabase(context, phone).customerJobDao().getAllJobs()
+        }
+    }
+
+    val allCategories: Flow<List<ExpertCategoryEntity>> = _currentUserPhone.flatMapLatest { phone ->
+        if (context == null) {
+            fallbackCategoryDao?.getAllCategories() ?: flowOf(emptyList())
+        } else if (phone.isBlank()) {
+            flowOf(emptyList())
+        } else {
+            AppDatabase.getDatabase(context, phone).expertCategoryDao().getAllCategories()
+        }
+    }
+
+    val deletedJobs: Flow<List<CustomerJobEntity>> = _currentUserPhone.flatMapLatest { phone ->
+        if (context == null) {
+            fallbackJobDao?.getDeletedJobs() ?: flowOf(emptyList())
+        } else if (phone.isBlank()) {
+            flowOf(emptyList())
+        } else {
+            AppDatabase.getDatabase(context, phone).customerJobDao().getDeletedJobs()
+        }
+    }
+
+    val deletedExperts: Flow<List<ExpertEntity>> = _currentUserPhone.flatMapLatest { phone ->
+        if (context == null) {
+            fallbackExpertDao?.getDeletedExperts() ?: flowOf(emptyList())
+        } else if (phone.isBlank()) {
+            flowOf(emptyList())
+        } else {
+            AppDatabase.getDatabase(context, phone).expertDao().getDeletedExperts()
+        }
+    }
+
+    val allTechnicians: Flow<List<TechnicianEntity>>? = _currentUserPhone.flatMapLatest { phone ->
+        if (context == null) {
+            fallbackTechnicianDao?.getAllTechnicians() ?: flowOf(emptyList())
+        } else if (phone.isBlank()) {
+            flowOf(emptyList())
+        } else {
+            AppDatabase.getDatabase(context, phone).technicianDao().getAllTechnicians()
+        }
+    }
+
+    val allCustomers: Flow<List<CustomerEntity>>? = _currentUserPhone.flatMapLatest { phone ->
+        if (context == null) {
+            fallbackCustomerDao?.getAllCustomers() ?: flowOf(emptyList())
+        } else if (phone.isBlank()) {
+            flowOf(emptyList())
+        } else {
+            AppDatabase.getDatabase(context, phone).customerDao().getAllCustomers()
+        }
+    }
+
+    fun getJobsForExpert(expertId: Long): Flow<List<CustomerJobEntity>> = _currentUserPhone.flatMapLatest { phone ->
+        if (context == null) {
+            fallbackJobDao?.getJobsForExpert(expertId) ?: flowOf(emptyList())
+        } else if (phone.isBlank()) {
+            flowOf(emptyList())
+        } else {
+            AppDatabase.getDatabase(context, phone).customerJobDao().getJobsForExpert(expertId)
+        }
+    }
 
     suspend fun moveJobToRecycleBin(jobId: Long) {
-        jobDao.moveToRecycleBin(jobId, System.currentTimeMillis())
+        getJobDao().moveToRecycleBin(jobId, System.currentTimeMillis())
     }
 
     suspend fun restoreJobFromRecycleBin(jobId: Long) {
-        jobDao.restoreJobFromRecycleBin(jobId)
+        getJobDao().restoreJobFromRecycleBin(jobId)
     }
 
     suspend fun deleteJobPermanently(jobId: Long) {
-        jobDao.deleteJobById(jobId)
+        getJobDao().deleteJobById(jobId)
     }
 
     suspend fun moveExpertToRecycleBin(expertId: Long) {
-        expertDao.moveToRecycleBin(expertId, System.currentTimeMillis())
+        getExpertDao().moveToRecycleBin(expertId, System.currentTimeMillis())
     }
 
     suspend fun restoreExpertFromRecycleBin(expertId: Long) {
-        expertDao.restoreExpertFromRecycleBin(expertId)
+        getExpertDao().restoreExpertFromRecycleBin(expertId)
     }
 
     suspend fun deleteExpertPermanently(expertId: Long) {
-        expertDao.deleteExpertById(expertId)
+        getExpertDao().deleteExpertById(expertId)
     }
 
     suspend fun purgeRecycleBinOlderThan30Days() {
         val thirtyDaysAgo = System.currentTimeMillis() - (30L * 24 * 60 * 60 * 1000)
-        jobDao.purgeJobsOlderThan(thirtyDaysAgo)
-        expertDao.purgeExpertsOlderThan(thirtyDaysAgo)
+        getJobDao().purgeJobsOlderThan(thirtyDaysAgo)
+        getExpertDao().purgeExpertsOlderThan(thirtyDaysAgo)
     }
 
     suspend fun clearRecycleBin() {
-        jobDao.clearRecycleBin()
-        expertDao.clearRecycleBin()
+        getJobDao().clearRecycleBin()
+        getExpertDao().clearRecycleBin()
     }
 
     suspend fun updateWelcomeMessageSent(expertId: Long, sent: Boolean) {
-        expertDao.updateWelcomeMessageSent(expertId, sent)
+        getExpertDao().updateWelcomeMessageSent(expertId, sent)
     }
-
-    // Technician and Customer Flow properties
-    val allTechnicians: Flow<List<TechnicianEntity>>? = technicianDao?.getAllTechnicians()
-    val allCustomers: Flow<List<CustomerEntity>>? = customerDao?.getAllCustomers()
 
     // Category operations
     suspend fun insertCategory(name: String, isDefault: Boolean = false): Long {
         val trimmed = name.trim()
         if (trimmed.isBlank()) return 0L
-        return expertCategoryDao.insertCategory(
+        return getCategoryDao().insertCategory(
             ExpertCategoryEntity(name = trimmed, isDefault = isDefault)
         )
     }
 
     suspend fun deleteCategory(category: ExpertCategoryEntity) {
-        expertCategoryDao.deleteCategory(category)
+        getCategoryDao().deleteCategory(category)
     }
 
     suspend fun deleteCategoryByName(name: String) {
-        expertCategoryDao.deleteCategoryByName(name)
+        getCategoryDao().deleteCategoryByName(name)
     }
 
     // Technician operations
     suspend fun insertTechnician(technician: TechnicianEntity): Long {
-        val id = technicianDao?.insertTechnician(technician) ?: 0L
-        expertDao.insertExpert(
+        val id = getTechnicianDao()?.insertTechnician(technician) ?: 0L
+        getExpertDao().insertExpert(
             ExpertEntity(
                 name = technician.name,
                 phone = technician.contact,
@@ -112,40 +250,40 @@ class DispatchRepository(
     }
 
     suspend fun updateTechnician(technician: TechnicianEntity) {
-        technicianDao?.updateTechnician(technician)
+        getTechnicianDao()?.updateTechnician(technician)
     }
 
     suspend fun deleteTechnician(technician: TechnicianEntity) {
-        technicianDao?.deleteTechnician(technician)
+        getTechnicianDao()?.deleteTechnician(technician)
     }
 
-    suspend fun getTechnicianById(id: Long): TechnicianEntity? = technicianDao?.getTechnicianById(id)
+    suspend fun getTechnicianById(id: Long): TechnicianEntity? = getTechnicianDao()?.getTechnicianById(id)
 
     // Customer operations
     suspend fun insertCustomer(customer: CustomerEntity): Long =
-        customerDao?.insertCustomer(customer) ?: 0L
+        getCustomerDao()?.insertCustomer(customer) ?: 0L
 
     suspend fun updateCustomer(customer: CustomerEntity) {
-        customerDao?.updateCustomer(customer)
+        getCustomerDao()?.updateCustomer(customer)
     }
 
     suspend fun deleteCustomer(customer: CustomerEntity) {
-        customerDao?.deleteCustomer(customer)
+        getCustomerDao()?.deleteCustomer(customer)
     }
 
-    suspend fun getCustomerById(id: Long): CustomerEntity? = customerDao?.getCustomerById(id)
+    suspend fun getCustomerById(id: Long): CustomerEntity? = getCustomerDao()?.getCustomerById(id)
 
     // Expert operations
-    suspend fun insertExpert(expert: ExpertEntity): Long = expertDao.insertExpert(expert)
+    suspend fun insertExpert(expert: ExpertEntity): Long = getExpertDao().insertExpert(expert)
 
-    suspend fun updateExpert(expert: ExpertEntity) = expertDao.updateExpert(expert)
+    suspend fun updateExpert(expert: ExpertEntity) = getExpertDao().updateExpert(expert)
 
-    suspend fun deleteExpert(expert: ExpertEntity) = expertDao.deleteExpert(expert)
+    suspend fun deleteExpert(expert: ExpertEntity) = getExpertDao().deleteExpert(expert)
 
     // Customer Job / Order operations
     suspend fun insertJob(job: CustomerJobEntity): Long {
-        val id = jobDao.insertJob(job)
-        customerDao?.insertCustomer(
+        val id = getJobDao().insertJob(job)
+        getCustomerDao()?.insertCustomer(
             CustomerEntity(
                 name = job.customerName,
                 contact = job.customerPhone,
@@ -160,15 +298,15 @@ class DispatchRepository(
     }
 
     suspend fun updateJob(job: CustomerJobEntity) {
-        jobDao.updateJob(job)
+        getJobDao().updateJob(job)
     }
 
     suspend fun unassignExpertFromJob(jobId: Long) {
-        jobDao.unassignExpertFromJob(jobId)
+        getJobDao().unassignExpertFromJob(jobId)
     }
 
     suspend fun updateJobStatus(jobId: Long, status: JobStatus) {
-        jobDao.updateJobStatus(jobId, status.name)
+        getJobDao().updateJobStatus(jobId, status.name)
     }
 
     suspend fun assignJobToExpert(
@@ -176,7 +314,7 @@ class DispatchRepository(
         expert: ExpertEntity,
         distanceKm: Double
     ) {
-        jobDao.updateJobDispatch(
+        getJobDao().updateJobDispatch(
             jobId = jobId,
             status = JobStatus.PROCESSING.name,
             expertId = expert.id,
@@ -187,19 +325,19 @@ class DispatchRepository(
     }
 
     suspend fun updateExpertNotified(jobId: Long, sent: Boolean) {
-        jobDao.updateExpertNotified(jobId, sent)
+        getJobDao().updateExpertNotified(jobId, sent)
     }
 
     suspend fun updateCustomerNotifiedOnAssign(jobId: Long, sent: Boolean) {
-        jobDao.updateCustomerNotifiedOnAssign(jobId, sent)
+        getJobDao().updateCustomerNotifiedOnAssign(jobId, sent)
     }
 
     suspend fun updateCustomerNotifiedOnCompletion(jobId: Long, sent: Boolean) {
-        jobDao.updateCustomerNotifiedOnCompletion(jobId, sent)
+        getJobDao().updateCustomerNotifiedOnCompletion(jobId, sent)
     }
 
     suspend fun updateMessageDismissedAt(jobId: Long, time: Long?) {
-        jobDao.updateMessageDismissedAt(jobId, time)
+        getJobDao().updateMessageDismissedAt(jobId, time)
     }
 
     suspend fun completeOrCancelJobWithReview(
@@ -210,7 +348,7 @@ class DispatchRepository(
         feedback: String?
     ) {
         val newStatus = if (isCompleted) JobStatus.COMPLETED.name else JobStatus.CANCELLED.name
-        jobDao.completeOrCancelJobWithReview(
+        getJobDao().completeOrCancelJobWithReview(
             jobId = jobId,
             status = newStatus,
             rating = rating,
@@ -220,6 +358,7 @@ class DispatchRepository(
 
         // Update expert's review metrics in database
         if (expertId != null && expertId > 0) {
+            val expertDao = getExpertDao()
             val expert = expertDao.getExpertById(expertId)
             if (expert != null) {
                 val newCount = expert.totalRatingsCount + 1
@@ -240,7 +379,7 @@ class DispatchRepository(
         }
     }
 
-    suspend fun deleteJob(job: CustomerJobEntity) = jobDao.deleteJob(job)
+    suspend fun deleteJob(job: CustomerJobEntity) = getJobDao().deleteJob(job)
 
     suspend fun restoreDatabase(
         jobs: List<CustomerJobEntity>,
@@ -248,20 +387,17 @@ class DispatchRepository(
         categories: List<ExpertCategoryEntity>
     ) {
         if (jobs.isNotEmpty()) {
-            jobDao.insertJobs(jobs)
+            getJobDao().insertJobs(jobs)
         }
         if (experts.isNotEmpty()) {
-            expertDao.insertExperts(experts)
+            getExpertDao().insertExperts(experts)
         }
         if (categories.isNotEmpty()) {
-            categories.forEach { expertCategoryDao.insertCategory(it) }
+            val catDao = getCategoryDao()
+            categories.forEach { catDao.insertCategory(it) }
         }
     }
 
-    /**
-     * Calculates distance and travel time to all experts from customer coordinates,
-     * sorted in ascending order (nearest expert first).
-     */
     suspend fun findNearestExperts(
         customerLat: Double,
         customerLng: Double,
@@ -301,85 +437,28 @@ class DispatchRepository(
             .sortedBy { it.distanceKm }
     }
 
-    suspend fun seedSampleExpertsIfEmpty() {
-        // Seed default categories: Electrician and Plumber as requested
-        if (expertCategoryDao.getCategoryCount() == 0) {
-            expertCategoryDao.insertCategory(
-                ExpertCategoryEntity(name = "Electrician", isDefault = true)
-            )
-            expertCategoryDao.insertCategory(
-                ExpertCategoryEntity(name = "Plumber", isDefault = true)
-            )
-        }
-
-        if (expertDao.getExpertCount() == 0) {
-            val sampleExperts = listOf(
-                ExpertEntity(
-                    name = "Ramesh Sharma",
-                    phone = "9871234560",
-                    category = "Electrician",
-                    address = "Sector 18 Market, Main Road",
-                    latitude = 28.5708,
-                    longitude = 77.3261,
-                    isAvailable = true,
-                    rating = 4.9f,
-                    ratingSum = 49.0f,
-                    totalRatingsCount = 10,
-                    completedJobsCount = 142
-                ),
-                ExpertEntity(
-                    name = "Sunil Verma",
-                    phone = "9899887760",
-                    category = "Plumber",
-                    address = "Near Metro Station, Sector 29",
-                    latitude = 28.5630,
-                    longitude = 77.3340,
-                    isAvailable = true,
-                    rating = 4.7f,
-                    ratingSum = 47.0f,
-                    totalRatingsCount = 10,
-                    completedJobsCount = 95
+    suspend fun ensureDefaultCategoriesForCurrentUser() {
+        val phone = _currentUserPhone.value
+        if (context != null && phone.isNotBlank()) {
+            val db = AppDatabase.getDatabase(context, phone)
+            if (db.expertCategoryDao().getCategoryCount() == 0) {
+                db.expertCategoryDao().insertCategory(
+                    ExpertCategoryEntity(name = "Electrician", isDefault = true)
                 )
-            )
-            expertDao.insertExperts(sampleExperts)
+                db.expertCategoryDao().insertCategory(
+                    ExpertCategoryEntity(name = "Plumber", isDefault = true)
+                )
+            }
+        } else {
+            val catDao = getCategoryDao()
+            if (catDao.getCategoryCount() == 0) {
+                catDao.insertCategory(ExpertCategoryEntity(name = "Electrician", isDefault = true))
+                catDao.insertCategory(ExpertCategoryEntity(name = "Plumber", isDefault = true))
+            }
         }
+    }
 
-        if (jobDao.getJobCount() == 0) {
-            val sampleJob = CustomerJobEntity(
-                customerName = "Pooja Verma",
-                customerPhone = "9988776655",
-                serviceType = "AC Cooling Problem",
-                issueDescription = "AC not cooling and making rattling sound in bedroom",
-                address = "Flat 402, Royal Towers, Sector 19",
-                latitude = 28.5750,
-                longitude = 77.3290,
-                status = JobStatus.PENDING.name
-            )
-            jobDao.insertJob(sampleJob)
-
-            val now = System.currentTimeMillis()
-            val sampleCompletedJob = CustomerJobEntity(
-                customerName = "Rajesh Gupta",
-                customerPhone = "9812345670",
-                serviceType = "Water Heater / Geyser Wiring",
-                issueDescription = "Geyser tripping MCB constantly in bathroom",
-                address = "Plot 88, Sector 21 Noida",
-                latitude = 28.5820,
-                longitude = 77.3320,
-                status = JobStatus.COMPLETED.name,
-                assignedExpertId = 1,
-                assignedExpertName = "Ramesh Sharma",
-                assignedExpertPhone = "9871234560",
-                distanceKmAtDispatch = 1.6,
-                ratingGiven = 5.0f,
-                reviewFeedback = "Very quick response. Replaced burnt heating element wiring and tested within an hour. Excellent service!",
-                createdAt = now - (68 * 60 * 1000),
-                completedAt = now,
-                isExpertNotified = true,
-                isCustomerNotifiedOnAssign = true,
-                isCustomerNotifiedOnCompletion = true
-            )
-            jobDao.insertJob(sampleCompletedJob)
-        }
+    suspend fun seedSampleExpertsIfEmpty() {
+        ensureDefaultCategoriesForCurrentUser()
     }
 }

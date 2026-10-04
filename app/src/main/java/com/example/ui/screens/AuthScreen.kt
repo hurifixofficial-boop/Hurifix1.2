@@ -255,16 +255,6 @@ fun AuthScreen(
                             fontWeight = FontWeight.Bold
                         )
                     }
-
-                    // Demo login hint
-                    if (!isRegisterMode) {
-                        Text(
-                            text = "Default Login: 9876543210 | Pass: admin123",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.align(Alignment.CenterHorizontally)
-                        )
-                    }
                 }
             }
 
