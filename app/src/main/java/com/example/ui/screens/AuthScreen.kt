@@ -1,8 +1,10 @@
 package com.example.ui.screens
 
+import android.app.Activity
+import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,11 +21,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -36,52 +35,139 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.ui.viewmodel.AuthViewModel
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
+import com.example.data.firebase.FirestoreSyncManager
 import com.example.data.model.HurifixUser
-import com.example.data.remote.FirestoreService
+import com.example.ui.components.OtpVerificationDialog
+import com.example.ui.components.SuccessAnimationOverlay
+import com.example.util.OtpRateLimiter
+import com.example.util.PhoneAuthManager
 import com.example.util.SessionManager
+import com.example.util.SoundHelper
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
 fun AuthScreen(
     sessionManager: SessionManager,
+    authViewModel: AuthViewModel = viewModel(),
     onLoginSuccess: (name: String) -> Unit
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val firestoreService = remember { FirestoreService(context) }
+    val syncManager = remember { FirestoreSyncManager.getInstance(context) }
+    val rateLimiter = remember { OtpRateLimiter.getInstance(context) }
 
+    var isOtpLoginMode by remember { mutableStateOf(false) } // false = Password Mode, true = OTP Mode
+    var isOtpSent by remember { mutableStateOf(false) } // false = Ask mobile number first, true = OTP code sent
     var phone by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
+
+    // OTP Mode State
+    var loginOtpInput by remember { mutableStateOf("") }
+    var activeVerificationId by remember { mutableStateOf("") }
+    var activeOtpCodeHint by remember { mutableStateOf("") }
+    var isSendingOtp by remember { mutableStateOf(false) }
+    var resendTimerSeconds by remember { mutableIntStateOf(0) }
+
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var successMessage by remember { mutableStateOf<String?>(null) }
 
+    // Success Animation Overlay State
+    var showSuccessOverlay by remember { mutableStateOf(false) }
+    var successOverlayTitle by remember { mutableStateOf("Authentication Successful!") }
+    var successOverlaySubtitle by remember { mutableStateOf("Redirecting to portal...") }
+    var pendingSuccessName by remember { mutableStateOf("") }
+
+    // Password Reset / Forgot Password state
+    var showForgotPasswordPhoneDialog by remember { mutableStateOf(false) }
+    var forgotPasswordPhone by remember { mutableStateOf("") }
+    var showForgotPasswordOtpModal by remember { mutableStateOf(false) }
+    var showResetPasswordDialog by remember { mutableStateOf(false) }
+    var newPasswordInput by remember { mutableStateOf("") }
+    var newPasswordConfirmInput by remember { mutableStateOf("") }
+    var resetPasswordError by remember { mutableStateOf<String?>(null) }
+
     // Emergency Admin Recovery Dialog state
     var showRecoveryDialog by remember { mutableStateOf(false) }
+    var recoveryPhone by remember { mutableStateOf("") }
+    var recoveryKey by remember { mutableStateOf("") }
+    var lostPhoneToBlock by remember { mutableStateOf("") }
+    var recoveryError by remember { mutableStateOf<String?>(null) }
+    var isRecovering by remember { mutableStateOf(false) }
+
+    // Countdown Timer Loop for Resend OTP
+    LaunchedEffect(resendTimerSeconds) {
+        if (resendTimerSeconds > 0) {
+            delay(1000L)
+            resendTimerSeconds -= 1
+        }
+    }
+
+    // Sends OTP ONLY after verifying that the mobile number is registered in Firestore
+    fun sendLoginOtpIfRegistered() {
+        val clean = phone.replace(Regex("[^0-9]"), "")
+        if (clean.length < 10) {
+            return
+        }
+
+        // Sync phone into AuthViewModel
+        authViewModel.onPhoneChanged(clean)
+
+        // Delegate pre-check & phone auth initiation to AuthViewModel
+        authViewModel.verifyPhoneRegistrationAndSendOtp(
+            context = context,
+            activity = context as? Activity,
+            onSuccess = {
+                val state = authViewModel.uiState.value
+                isSendingOtp = state.isSendingOtp
+                isOtpSent = state.isOtpSent
+                activeVerificationId = state.activeVerificationId
+                activeOtpCodeHint = state.activeOtpCodeHint
+                resendTimerSeconds = state.resendTimerSeconds
+                errorMessage = null
+
+                Toast.makeText(context, "OTP Sent", Toast.LENGTH_SHORT).show()
+            },
+            onError = { _ ->
+                val state = authViewModel.uiState.value
+                isSendingOtp = state.isSendingOtp
+            }
+        )
+    }
 
     Box(
         modifier = Modifier
@@ -123,84 +209,195 @@ fun AuthScreen(
                 color = MaterialTheme.colorScheme.primary
             )
 
-            Spacer(Modifier.height(28.dp))
+            Spacer(Modifier.height(8.dp))
+
+            Surface(
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text(
+                    text = "🔒 Secure Centralized Multi-User Portal",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                )
+            }
+
+            Spacer(Modifier.height(20.dp))
 
             // Auth Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = "Secure Staff Login",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.primaryContainer
-                        ) {
-                            Text(
-                                text = "RBAC Protected",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                    }
-
                     Text(
-                        text = "Enter your registered business phone and password to access the dispatch portal.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = if (!isOtpLoginMode) "Login with Password" else "Login via Mobile OTP",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
 
                     OutlinedTextField(
                         value = phone,
-                        onValueChange = {
-                            phone = it
+                        onValueChange = { input ->
+                            phone = input.filter { it.isDigit() }.take(10)
                             errorMessage = null
                         },
-                        label = { Text("Mobile Number (10 Digit)") },
+                        label = { Text("Mobile Number (10 Digits) *") },
+                        prefix = { Text("+91 ") },
                         leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                         singleLine = true,
+                        supportingText = {
+                            if (phone.isNotEmpty() && phone.length < 10) {
+                                Text("${phone.length}/10 digits", color = MaterialTheme.colorScheme.error)
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    OutlinedTextField(
-                        value = password,
-                        onValueChange = {
-                            password = it
-                            errorMessage = null
-                        },
-                        label = { Text("Password / PIN") },
-                        leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
-                        trailingIcon = {
-                            IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                                Icon(
-                                    if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                    contentDescription = null
+                    if (!isOtpLoginMode) {
+                        // MODE 1: Standard Password Input Box
+                        OutlinedTextField(
+                            value = password,
+                            onValueChange = {
+                                password = it
+                                errorMessage = null
+                            },
+                            label = { Text("Password / PIN *") },
+                            leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                            trailingIcon = {
+                                IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                    Icon(
+                                        if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                        contentDescription = null
+                                    )
+                                }
+                            },
+                            visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        // Small text options row below password box
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TextButton(
+                                onClick = {
+                                    // Switches view to OTP mode without sending OTP directly!
+                                    isOtpLoginMode = true
+                                    isOtpSent = false
+                                    errorMessage = null
+                                }
+                            ) {
+                                Text(
+                                    text = "📲 Login with OTP",
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
                                 )
                             }
-                        },
-                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+
+                            TextButton(
+                                onClick = {
+                                    forgotPasswordPhone = phone
+                                    resetPasswordError = null
+                                    showForgotPasswordPhoneDialog = true
+                                }
+                            ) {
+                                Text("Forgot Password?", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    } else {
+                        // MODE 2: OTP Login Mode (Replaces Password Box)
+                        if (isOtpSent) {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedTextField(
+                                    value = loginOtpInput,
+                                    onValueChange = { input ->
+                                        loginOtpInput = input.filter { it.isDigit() }.take(6)
+                                        errorMessage = null
+                                    },
+                                    label = { Text("Enter 6-Digit OTP Code *") },
+                                    placeholder = { Text("123456") },
+                                    leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    singleLine = true,
+                                    textStyle = MaterialTheme.typography.titleMedium.copy(
+                                        textAlign = TextAlign.Center,
+                                        letterSpacing = 3.sp,
+                                        fontWeight = FontWeight.Bold
+                                    ),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("otp_input_field")
+                                )
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    TextButton(
+                                        onClick = {
+                                            isOtpLoginMode = false
+                                            errorMessage = null
+                                        }
+                                    ) {
+                                        Text(
+                                            text = "🔑 Login with Password",
+                                            fontSize = 12.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+
+                                    TextButton(
+                                        onClick = { sendLoginOtpIfRegistered() },
+                                        enabled = !isSendingOtp && resendTimerSeconds == 0
+                                    ) {
+                                        if (resendTimerSeconds > 0) {
+                                            Text("Resend in ${resendTimerSeconds}s", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        } else {
+                                            Text("🔄 Resend OTP", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            // Link to go back to password mode before OTP is requested
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.Start
+                            ) {
+                                TextButton(
+                                    onClick = {
+                                        isOtpLoginMode = false
+                                        errorMessage = null
+                                    }
+                                ) {
+                                    Text(
+                                        text = "🔑 Switch to Password Login",
+                                        fontSize = 12.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+                    }
 
                     errorMessage?.let { error ->
                         Surface(
@@ -208,23 +405,13 @@ fun AuthScreen(
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Row(
-                                modifier = Modifier.padding(10.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.Security,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Text(
-                                    text = error,
-                                    color = MaterialTheme.colorScheme.onErrorContainer,
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                            }
+                            Text(
+                                text = error,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(10.dp)
+                            )
                         }
                     }
 
@@ -245,240 +432,485 @@ fun AuthScreen(
 
                     Button(
                         onClick = {
-                            errorMessage = null
-                            isLoading = true
-                            coroutineScope.launch {
-                                val result = firestoreService.login(phone, password)
-                                isLoading = false
-                                result.onSuccess { user ->
-                                    sessionManager.saveUserSession(user)
-                                    onLoginSuccess(user.name)
-                                }.onFailure { exc ->
-                                    errorMessage = exc.localizedMessage ?: "Login failed"
+                            SoundHelper.playSFX("click")
+
+                            if (phone.length < 10) {
+                                SoundHelper.playSFX("error")
+                                errorMessage = "Please enter your 10-digits mobile number to login"
+                                return@Button
+                            }
+
+                            if (!isOtpLoginMode) {
+                                // Password Login execution
+                                if (password.isBlank()) {
+                                    SoundHelper.playSFX("error")
+                                    errorMessage = "Please enter your password"
+                                    return@Button
+                                }
+
+                                isLoading = true
+                                errorMessage = null
+                                coroutineScope.launch {
+                                    val result = sessionManager.login(phone, password)
+                                    isLoading = false
+                                    result.onSuccess { loggedInName ->
+                                        SoundHelper.playSFX("success")
+                                        pendingSuccessName = loggedInName
+                                        successOverlayTitle = "Authentication Successful!"
+                                        successOverlaySubtitle = "Welcome back, $loggedInName"
+                                        showSuccessOverlay = true
+                                    }.onFailure { exc ->
+                                        SoundHelper.playSFX("error")
+                                        errorMessage = exc.localizedMessage ?: "No user found try again"
+                                    }
+                                }
+                            } else {
+                                // OTP Mode Execution
+                                if (!isOtpSent) {
+                                    // Step A: Send OTP (verifies registration first!)
+                                    sendLoginOtpIfRegistered()
+                                } else {
+                                    // Step B: Verify 6-digit OTP code & Login
+                                    if (loginOtpInput.length < 6) {
+                                        return@Button
+                                    }
+
+                                    isLoading = true
+                                    errorMessage = null
+                                    PhoneAuthManager.verifyOtp(
+                                        context = context,
+                                        phone = phone,
+                                        verificationId = activeVerificationId.ifBlank { "FALLBACK:$activeOtpCodeHint" },
+                                        inputCode = loginOtpInput,
+                                        onSuccess = {
+                                            coroutineScope.launch {
+                                                val result = sessionManager.loginWithOtp(phone)
+                                                isLoading = false
+                                                result.onSuccess { loggedInName ->
+                                                    SoundHelper.playSFX("success")
+                                                    pendingSuccessName = loggedInName
+                                                    successOverlayTitle = "OTP Login Successful!"
+                                                    successOverlaySubtitle = "Welcome back, $loggedInName"
+                                                    showSuccessOverlay = true
+                                                }.onFailure { exc ->
+                                                    errorMessage = exc.localizedMessage ?: "No user found try again"
+                                                }
+                                            }
+                                        },
+                                        onError = { _ ->
+                                            isLoading = false
+                                        }
+                                    )
                                 }
                             }
                         },
-                        enabled = !isLoading && phone.isNotBlank() && password.isNotBlank(),
+                        enabled = !isLoading && !isSendingOtp,
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(50.dp)
                     ) {
-                        if (isLoading) {
+                        if (isLoading || isSendingOtp) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(22.dp),
                                 color = MaterialTheme.colorScheme.onPrimary,
-                                strokeWidth = 2.dp
+                                strokeWidth = 2.5.dp
                             )
+                            Spacer(Modifier.width(10.dp))
+                            Text(if (isSendingOtp) "Checking number & sending OTP..." else "Verifying credentials...")
                         } else {
                             Text(
-                                text = "Login to Hurifix",
+                                text = if (!isOtpLoginMode) "Login to Hurifix" else if (!isOtpSent) "Send OTP Code" else "Verify & Login with OTP",
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold
                             )
                         }
                     }
-
-                    Text(
-                        text = "New Staff? Contact Hurifix Admin to create and authorize your account.",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.align(Alignment.CenterHorizontally)
-                    )
                 }
             }
 
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(16.dp))
 
-            // Discrete Secret "Emergency Admin Recovery" Option
-            Row(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable { showRecoveryDialog = true }
-                    .padding(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Icon(
-                    Icons.Default.Key,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(16.dp)
-                )
-                Text(
-                    text = "Recover Admin Access",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = FontWeight.Medium
-                )
-            }
-
-            Spacer(Modifier.height(24.dp))
-        }
-
-        // Emergency Admin Recovery Dialog
-        if (showRecoveryDialog) {
-            EmergencyRecoveryDialog(
-                firestoreService = firestoreService,
-                sessionManager = sessionManager,
-                onDismiss = { showRecoveryDialog = false },
-                onRecoverySuccess = { adminUser ->
-                    showRecoveryDialog = false
-                    sessionManager.saveUserSession(adminUser)
-                    onLoginSuccess(adminUser.name)
-                }
+            // Notice about access & Emergency Recovery Option
+            Text(
+                text = "Notice: Only registered staff and admins can access Hurifix. Contact Admin to register your account.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
             )
-        }
-    }
-}
 
-@Composable
-fun EmergencyRecoveryDialog(
-    firestoreService: FirestoreService,
-    sessionManager: SessionManager,
-    onDismiss: () -> Unit,
-    onRecoverySuccess: (HurifixUser) -> Unit
-) {
-    val coroutineScope = rememberCoroutineScope()
-    var currentPhone by remember { mutableStateOf("") }
-    var recoveryKey by remember { mutableStateOf("") }
-    var lostPhone by remember { mutableStateOf("") }
-    var newPassword by remember { mutableStateOf("") }
-    var isSubmitting by remember { mutableStateOf(false) }
-    var dialogError by remember { mutableStateOf<String?>(null) }
+            Spacer(Modifier.height(12.dp))
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            // Emergency Admin Recovery Secret Option
+            TextButton(
+                onClick = {
+                    recoveryPhone = phone
+                    recoveryKey = ""
+                    lostPhoneToBlock = ""
+                    recoveryError = null
+                    showRecoveryDialog = true
+                }
             ) {
                 Icon(
                     Icons.Default.Security,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.primary
                 )
-                Text("Emergency Admin Recovery", fontWeight = FontWeight.Bold)
-            }
-        },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
+                Spacer(Modifier.width(6.dp))
                 Text(
-                    text = "Enter the Master Emergency Secret Recovery Key to promote your current phone number to ADMIN and revoke/block access for lost devices.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    text = "Recover Admin Access (Secret Key)",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp
                 )
-
-                OutlinedTextField(
-                    value = currentPhone,
-                    onValueChange = {
-                        currentPhone = it
-                        dialogError = null
-                    },
-                    label = { Text("Your Current Mobile Number (10 Digit)") },
-                    leadingIcon = { Icon(Icons.Default.PhoneAndroid, contentDescription = null) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                OutlinedTextField(
-                    value = recoveryKey,
-                    onValueChange = {
-                        recoveryKey = it
-                        dialogError = null
-                    },
-                    label = { Text("Secret Recovery Key") },
-                    leadingIcon = { Icon(Icons.Default.Key, contentDescription = null) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                OutlinedTextField(
-                    value = lostPhone,
-                    onValueChange = {
-                        lostPhone = it
-                        dialogError = null
-                    },
-                    label = { Text("Lost / Stolen Phone (To Block/Revoke)") },
-                    placeholder = { Text("e.g. Previous admin phone") },
-                    leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                OutlinedTextField(
-                    value = newPassword,
-                    onValueChange = {
-                        newPassword = it
-                        dialogError = null
-                    },
-                    label = { Text("Set New Admin Password") },
-                    leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                dialogError?.let { err ->
-                    Text(
-                        text = err,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
             }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    if (currentPhone.isBlank() || recoveryKey.isBlank() || newPassword.isBlank()) {
-                        dialogError = "Please fill in all required fields"
-                        return@Button
-                    }
-                    isSubmitting = true
-                    dialogError = null
-                    coroutineScope.launch {
-                        val result = firestoreService.recoverAdminAccess(
-                            currentPhone = currentPhone,
-                            secretKey = recoveryKey,
-                            lostPhoneToRevoke = lostPhone.ifBlank { null },
-                            newPassword = newPassword
-                        )
-                        isSubmitting = false
-                        result.onSuccess { admin ->
-                            onRecoverySuccess(admin)
-                        }.onFailure { exc ->
-                            dialogError = exc.localizedMessage ?: "Recovery failed. Verify secret key."
+
+            Spacer(Modifier.height(20.dp))
+        }
+    }
+
+    // Forgot Password Modal - Step 1: Mobile Phone Check
+    if (showForgotPasswordPhoneDialog) {
+        AlertDialog(
+            onDismissRequest = { showForgotPasswordPhoneDialog = false },
+            title = { Text("Reset Password via OTP", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Enter your 10-digit registered mobile number to receive a verification OTP code.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    OutlinedTextField(
+                        value = forgotPasswordPhone,
+                        onValueChange = { input ->
+                            forgotPasswordPhone = input.filter { it.isDigit() }.take(10)
+                            resetPasswordError = null
+                        },
+                        label = { Text("Registered Mobile Number *") },
+                        prefix = { Text("+91 ") },
+                        leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    resetPasswordError?.let { err ->
+                        Surface(
+                            color = MaterialTheme.colorScheme.errorContainer,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = err,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(10.dp)
+                            )
                         }
                     }
-                },
-                enabled = !isSubmitting,
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-            ) {
-                if (isSubmitting) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        color = MaterialTheme.colorScheme.onError,
-                        strokeWidth = 2.dp
-                    )
-                } else {
-                    Text("Promote to Admin")
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (forgotPasswordPhone.length < 10) {
+                            SoundHelper.playSFX("error")
+                            resetPasswordError = "Please enter your 10-digits mobile number to login"
+                            return@Button
+                        }
+
+                        coroutineScope.launch {
+                            val userCheck = syncManager.loginWithOtp(forgotPasswordPhone)
+                            userCheck.onSuccess {
+                                showForgotPasswordPhoneDialog = false
+                                showForgotPasswordOtpModal = true
+                            }.onFailure {
+                                SoundHelper.playSFX("error")
+                                resetPasswordError = "No user found try again"
+                            }
+                        }
+                    },
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text("Send OTP Code", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showForgotPasswordPhoneDialog = false }) {
+                    Text("Cancel")
                 }
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !isSubmitting) {
-                Text("Cancel")
+        )
+    }
+
+    // Forgot Password Modal - Step 2: OTP Verification
+    if (showForgotPasswordOtpModal) {
+        OtpVerificationDialog(
+            phone = forgotPasswordPhone,
+            purposeTitle = "Verify Password Reset OTP",
+            purposeSubtitle = "Verify OTP sent to +91 $forgotPasswordPhone to reset password",
+            onSuccess = {
+                showForgotPasswordOtpModal = false
+                newPasswordInput = ""
+                newPasswordConfirmInput = ""
+                resetPasswordError = null
+                showResetPasswordDialog = true
+            },
+            onDismiss = { showForgotPasswordOtpModal = false }
+        )
+    }
+
+    // Forgot Password Modal - Step 3: Set New Password
+    if (showResetPasswordDialog) {
+        AlertDialog(
+            onDismissRequest = { showResetPasswordDialog = false },
+            title = { Text("Set New Password", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Set a new login password for account: +91 $forgotPasswordPhone",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    OutlinedTextField(
+                        value = newPasswordInput,
+                        onValueChange = {
+                            newPasswordInput = it
+                            resetPasswordError = null
+                        },
+                        label = { Text("New Password *") },
+                        leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = newPasswordConfirmInput,
+                        onValueChange = {
+                            newPasswordConfirmInput = it
+                            resetPasswordError = null
+                        },
+                        label = { Text("Confirm New Password *") },
+                        leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    resetPasswordError?.let { err ->
+                        Surface(
+                            color = MaterialTheme.colorScheme.errorContainer,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = err,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(10.dp)
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (newPasswordInput.isBlank() || newPasswordInput.length < 4) {
+                            SoundHelper.playSFX("error")
+                            resetPasswordError = "Password must be at least 4 characters long"
+                            return@Button
+                        }
+                        if (newPasswordInput.trim() != newPasswordConfirmInput.trim()) {
+                            SoundHelper.playSFX("error")
+                            resetPasswordError = "Passwords do not match"
+                            return@Button
+                        }
+
+                        coroutineScope.launch {
+                            val res = syncManager.updateUserPassword(forgotPasswordPhone, newPasswordInput.trim())
+                            if (res.isSuccess) {
+                                SoundHelper.playSFX("success")
+                                showResetPasswordDialog = false
+                                Toast.makeText(context, "✅ Password updated successfully! Please login with your new password.", Toast.LENGTH_LONG).show()
+                                phone = forgotPasswordPhone
+                                password = newPasswordInput.trim()
+                                isOtpLoginMode = false
+                                isOtpSent = false
+                            } else {
+                                SoundHelper.playSFX("error")
+                                resetPasswordError = "Failed to update password. Please try again."
+                            }
+                        }
+                    },
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text("Update Password", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showResetPasswordDialog = false }) {
+                    Text("Cancel")
+                }
             }
+        )
+    }
+
+    // Emergency Admin Recovery Dialog
+    if (showRecoveryDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!isRecovering) showRecoveryDialog = false },
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Security,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Text("Admin Access Recovery", fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Enter the Emergency Secret Recovery Key to promote your mobile number to Master Admin. If your previous phone is lost, enter it below to block its access.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    OutlinedTextField(
+                        value = recoveryPhone,
+                        onValueChange = { input ->
+                            recoveryPhone = input.filter { it.isDigit() }.take(10)
+                            recoveryError = null
+                        },
+                        label = { Text("Your Mobile Number (10 Digits) *") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = recoveryKey,
+                        onValueChange = {
+                            recoveryKey = it
+                            recoveryError = null
+                        },
+                        label = { Text("Emergency Secret Key *") },
+                        placeholder = { Text("e.g. Recover##") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = lostPhoneToBlock,
+                        onValueChange = { input ->
+                            lostPhoneToBlock = input.filter { it.isDigit() }.take(10)
+                        },
+                        label = { Text("Lost/Compromised Mobile to Block (Optional)") },
+                        placeholder = { Text("10-digit number to revoke") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    recoveryError?.let { err ->
+                        Surface(
+                            color = MaterialTheme.colorScheme.errorContainer,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = err,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(8.dp)
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (recoveryPhone.length < 10) {
+                            recoveryError = "Please enter your 10-digits mobile number to login"
+                            return@Button
+                        }
+                        if (recoveryKey.trim() != HurifixUser.EMERGENCY_RECOVERY_KEY) {
+                            recoveryError = "Galat Secret Recovery Key! Access Denied."
+                            return@Button
+                        }
+
+                        isRecovering = true
+                        recoveryError = null
+                        coroutineScope.launch {
+                            val result = sessionManager.recoverAdminAccess(
+                                phone = recoveryPhone,
+                                secretKey = recoveryKey.trim(),
+                                lostPhoneToBlock = lostPhoneToBlock.ifBlank { null }
+                            )
+                            isRecovering = false
+                            result.onSuccess { adminName ->
+                                showRecoveryDialog = false
+                                onLoginSuccess(adminName)
+                            }.onFailure { exc ->
+                                recoveryError = exc.localizedMessage ?: "Recovery failed"
+                            }
+                        }
+                    },
+                    enabled = !isRecovering,
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    if (isRecovering) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text("Promoting to Admin...")
+                    } else {
+                        Text("Grant Admin Access", fontWeight = FontWeight.Bold)
+                    }
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { showRecoveryDialog = false },
+                    enabled = !isRecovering
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    SuccessAnimationOverlay(
+        visible = showSuccessOverlay,
+        title = successOverlayTitle,
+        subtitle = successOverlaySubtitle,
+        onFinished = {
+            showSuccessOverlay = false
+            onLoginSuccess(pendingSuccessName)
         }
     )
 }

@@ -18,7 +18,7 @@ import com.example.data.model.TechnicianEntity
         CustomerJobEntity::class,
         ExpertCategoryEntity::class
     ],
-    version = 6,
+    version = 10,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -29,19 +29,22 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun expertCategoryDao(): ExpertCategoryDao
 
     companion object {
-        const val CENTRAL_DATABASE_NAME = "hurifix_central_shared.db"
-
         @Volatile
         private var INSTANCE: AppDatabase? = null
+        private const val CENTRAL_DB_NAME = "hurifix_central_business.db"
 
+        /**
+         * Returns the single, centralized business database shared by all users (Admin & Staff).
+         * Completely eliminates per-user isolated databases so that everyone sees and edits the same data.
+         */
         fun getDatabase(context: Context, @Suppress("UNUSED_PARAMETER") userPhone: String = ""): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
-                    CENTRAL_DATABASE_NAME
+                    CENTRAL_DB_NAME
                 )
-                    .fallbackToDestructiveMigration(dropAllTables = false)
+                    .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance
                 instance

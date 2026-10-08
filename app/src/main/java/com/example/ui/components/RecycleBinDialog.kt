@@ -1,5 +1,8 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package com.example.ui.components
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -20,6 +23,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Info
@@ -33,11 +37,15 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
@@ -64,6 +72,13 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+private sealed class RecycleBinAction {
+    data class RestoreJob(val job: CustomerJobEntity) : RecycleBinAction()
+    data class DeleteJobForever(val job: CustomerJobEntity) : RecycleBinAction()
+    data class RestoreExpert(val expert: ExpertEntity) : RecycleBinAction()
+    data class DeleteExpertForever(val expert: ExpertEntity) : RecycleBinAction()
+}
+
 @Composable
 fun RecycleBinDialog(
     deletedJobs: List<CustomerJobEntity>,
@@ -77,6 +92,7 @@ fun RecycleBinDialog(
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
     var showEmptyConfirmDialog by remember { mutableStateOf(false) }
+    var confirmAction by remember { mutableStateOf<RecycleBinAction?>(null) }
 
     val dateFormat = remember { SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault()) }
 
@@ -115,79 +131,110 @@ fun RecycleBinDialog(
         )
     }
 
+    confirmAction?.let { action ->
+        when (action) {
+            is RecycleBinAction.RestoreJob -> {
+                HurifixConfirmDialog(
+                    title = "Restore Order #${action.job.id}?",
+                    message = "Do you want to restore order #${action.job.id} for ${action.job.customerName} back to active orders?",
+                    confirmText = "Yes, Restore",
+                    isDestructive = false,
+                    icon = Icons.Default.Restore,
+                    onConfirm = {
+                        confirmAction = null
+                        onRestoreJob(action.job.id)
+                    },
+                    onDismiss = { confirmAction = null }
+                )
+            }
+            is RecycleBinAction.DeleteJobForever -> {
+                HurifixConfirmDialog(
+                    title = "Delete Order Permanently?",
+                    message = "Permanently delete order #${action.job.id} for ${action.job.customerName}? This action cannot be undone.",
+                    confirmText = "Delete Forever",
+                    isDestructive = true,
+                    icon = Icons.Default.DeleteForever,
+                    onConfirm = {
+                        confirmAction = null
+                        onDeleteJobPermanently(action.job.id)
+                    },
+                    onDismiss = { confirmAction = null }
+                )
+            }
+            is RecycleBinAction.RestoreExpert -> {
+                HurifixConfirmDialog(
+                    title = "Restore Expert?",
+                    message = "Do you want to restore expert '${action.expert.name}' (${action.expert.category}) back to active experts?",
+                    confirmText = "Yes, Restore",
+                    isDestructive = false,
+                    icon = Icons.Default.Restore,
+                    onConfirm = {
+                        confirmAction = null
+                        onRestoreExpert(action.expert.id)
+                    },
+                    onDismiss = { confirmAction = null }
+                )
+            }
+            is RecycleBinAction.DeleteExpertForever -> {
+                HurifixConfirmDialog(
+                    title = "Delete Expert Permanently?",
+                    message = "Permanently delete expert '${action.expert.name}' (${action.expert.category})? This action cannot be undone.",
+                    confirmText = "Delete Forever",
+                    isDestructive = true,
+                    icon = Icons.Default.DeleteForever,
+                    onConfirm = {
+                        confirmAction = null
+                        onDeleteExpertPermanently(action.expert.id)
+                    },
+                    onDismiss = { confirmAction = null }
+                )
+            }
+        }
+    }
+
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth(0.96f)
-                .fillMaxHeight(0.92f),
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.outlineVariant)
-        ) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                // Header with rich styling
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            Brush.horizontalGradient(
-                                colors = listOf(Color(0xFFDC2626), Color(0xFFEF4444), Color(0xFFF97316))
-                            )
-                        )
-                        .padding(horizontal = 16.dp, vertical = 14.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(40.dp)
-                                    .clip(CircleShape)
-                                    .background(Color.White.copy(alpha = 0.2f)),
-                                contentAlignment = Alignment.Center
+        BackHandler { onDismiss() }
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Column {
+                            Text("🗑️ Recycle Bin", fontWeight = FontWeight.Bold)
+                            Text("30-Day Auto Retention • Safe Restore", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onDismiss) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                    },
+                    actions = {
+                        if (deletedJobs.isNotEmpty() || deletedExperts.isNotEmpty()) {
+                            TextButton(
+                                onClick = { showEmptyConfirmDialog = true },
+                                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
                             ) {
-                                Text("🗑️", fontSize = 20.sp)
-                            }
-
-                            Column {
-                                Text(
-                                    text = "Recycle Bin",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
-                                )
-                                Text(
-                                    text = "30-Day Auto Retention • Safe Restore",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = Color.White.copy(alpha = 0.85f)
-                                )
+                                Text("Empty Bin", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                             }
                         }
-
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (deletedJobs.isNotEmpty() || deletedExperts.isNotEmpty()) {
-                                TextButton(
-                                    onClick = { showEmptyConfirmDialog = true },
-                                    colors = ButtonDefaults.textButtonColors(contentColor = Color.White)
-                                ) {
-                                    Text("Empty Bin", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                }
-                            }
-                            IconButton(onClick = onDismiss) {
-                                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
-                            }
-                        }
-                    }
-                }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp)
+                    )
+                )
+            }
+        ) { paddingValues ->
+            Surface(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues),
+                color = MaterialTheme.colorScheme.background
+            ) {
+                Column(modifier = Modifier.fillMaxSize()) {
 
                 // 30-Day Info Banner
                 Surface(
@@ -277,8 +324,8 @@ fun RecycleBinDialog(
                                             job = job,
                                             daysLeft = daysLeft,
                                             dateFormat = dateFormat,
-                                            onRestore = { onRestoreJob(job.id) },
-                                            onDeletePermanently = { onDeleteJobPermanently(job.id) }
+                                            onRestore = { confirmAction = RecycleBinAction.RestoreJob(job) },
+                                            onDeletePermanently = { confirmAction = RecycleBinAction.DeleteJobForever(job) }
                                         )
                                     }
                                 }
@@ -318,8 +365,8 @@ fun RecycleBinDialog(
                                             expert = expert,
                                             daysLeft = daysLeft,
                                             dateFormat = dateFormat,
-                                            onRestore = { onRestoreExpert(expert.id) },
-                                            onDeletePermanently = { onDeleteExpertPermanently(expert.id) }
+                                            onRestore = { confirmAction = RecycleBinAction.RestoreExpert(expert) },
+                                            onDeletePermanently = { confirmAction = RecycleBinAction.DeleteExpertForever(expert) }
                                         )
                                     }
                                 }
@@ -342,6 +389,7 @@ fun RecycleBinDialog(
             }
         }
     }
+}
 }
 
 @Composable
