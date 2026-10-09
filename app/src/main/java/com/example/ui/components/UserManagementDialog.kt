@@ -90,7 +90,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -180,13 +179,10 @@ fun UserManagementDialog(
         }
     }
 
-    var isRefreshing by remember { mutableStateOf(false) }
-
     fun refreshUsers() {
-        isRefreshing = true
+        isLoading = true
         coroutineScope.launch {
             usersList = syncManager.fetchAllUsers()
-            isRefreshing = false
             isLoading = false
             lastBackupTimestamp = sessionManager.getLastBackupTimestamp()
             lastBackupStatus = sessionManager.getLastBackupStatus()
@@ -239,37 +235,42 @@ fun UserManagementDialog(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 16.dp),
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             Icon(
                                 Icons.Default.Security,
                                 contentDescription = null,
                                 tint = Color.White,
-                                modifier = Modifier.size(28.dp)
+                                modifier = Modifier.size(24.dp)
                             )
                             Column {
                                 Text(
                                     text = "👑 Admin Control Center",
-                                    fontSize = 22.sp,
+                                    fontSize = 18.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White
                                 )
                                 Text(
                                     text = "Team Designation & Google Drive Backup",
-                                    fontSize = 13.sp,
+                                    fontSize = 11.5.sp,
                                     color = Color.White.copy(alpha = 0.85f)
                                 )
                             }
                         }
 
-                        IconButton(onClick = onDismiss) {
-                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(26.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = { refreshUsers() }) {
+                                Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color.White)
+                            }
+                            IconButton(onClick = onDismiss) {
+                                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                            }
                         }
                     }
                 }
@@ -282,10 +283,10 @@ fun UserManagementDialog(
                         text = {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Text("Team Members (${usersList.size})", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                                Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Text("Team Members (${usersList.size})", fontWeight = FontWeight.Bold)
                             }
                         }
                     )
@@ -295,10 +296,10 @@ fun UserManagementDialog(
                         text = {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                Icon(Icons.Default.Backup, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Text("Backup & Drive", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                                Icon(Icons.Default.Backup, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Text("Backup & Drive", fontWeight = FontWeight.Bold)
                             }
                         }
                     )
@@ -308,23 +309,16 @@ fun UserManagementDialog(
                         text = {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Text("Activity Log (${allJobs.size})", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                                Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Text("Activity Log (${allJobs.size})", fontWeight = FontWeight.Bold)
                             }
                         }
                     )
                 }
 
-                PullToRefreshBox(
-                    isRefreshing = isRefreshing,
-                    onRefresh = { refreshUsers() },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                ) {
-                    if (selectedAdminTab == 0) {
+                if (selectedAdminTab == 0) {
                     // TAB 0: TEAM MEMBERS & DESIGNATION MANAGEMENT
                     val teamListState = rememberLazyListState()
                     val isTeamListScrolledDown by remember {
@@ -351,7 +345,8 @@ fun UserManagementDialog(
 
                     Box(
                         modifier = Modifier
-                            .fillMaxSize()
+                            .fillMaxWidth()
+                            .weight(1f)
                     ) {
                         if (isLoading) {
                             Box(
@@ -438,7 +433,8 @@ fun UserManagementDialog(
                     // TAB 1: ADMIN BACKUP & GOOGLE DRIVE CONTROL CENTER
                     LazyColumn(
                         modifier = Modifier
-                            .fillMaxSize(),
+                            .fillMaxWidth()
+                            .weight(1f),
                         contentPadding = PaddingValues(14.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
@@ -800,7 +796,6 @@ fun UserManagementDialog(
             }
         )
     }
-  }
 }
 
 @Composable
@@ -1129,49 +1124,33 @@ private fun AddTeamMemberDialog(
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             topBar = {
-                Surface(
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Person,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(28.dp)
+                TopAppBar(
+                    title = {
+                        Column {
+                            Text(
+                                text = "Add New Team Member",
+                                style = MaterialTheme.typography.titleLarge.copy(fontSize = 26.sp),
+                                fontWeight = FontWeight.ExtraBold
                             )
-                            Column {
-                                Text(
-                                    text = "Add New Team Member",
-                                    fontSize = 22.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
-                                )
-                                Text(
-                                    text = "Register staff credentials & assign permissions",
-                                    fontSize = 13.sp,
-                                    color = Color.White.copy(alpha = 0.85f)
-                                )
-                            }
+                            Text(
+                                text = "Register staff credentials & assign permissions",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
-
+                    },
+                    navigationIcon = {
                         IconButton(onClick = onDismiss) {
-                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(26.dp))
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", modifier = Modifier.size(26.dp))
                         }
-                    }
-                }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp)
+                    )
+                )
             },
-                    bottomBar = {
+            bottomBar = {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1684,7 +1663,7 @@ private fun PermissionSwitchRow(
 }
 
 @Composable
-private fun OrderActivityHistoryContent(
+private fun ColumnScope.OrderActivityHistoryContent(
     allJobs: List<CustomerJobEntity>
 ) {
     val dateFormat = remember { SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()) }
@@ -1730,7 +1709,8 @@ private fun OrderActivityHistoryContent(
 
     Column(
         modifier = Modifier
-            .fillMaxSize()
+            .fillMaxWidth()
+            .weight(1f)
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
