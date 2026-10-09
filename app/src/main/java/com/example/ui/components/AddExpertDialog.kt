@@ -239,11 +239,11 @@ fun AddExpertDialog(
                 isFetchingLocation = true
                 LocationHelper.fetchCurrentLocation(
                     context = context,
-                    onSuccess = { lat, lon ->
+                    onSuccess = { loc ->
                         isFetchingLocation = false
-                        latitude = lat
-                        longitude = lon
-                        rawLocation = "$lat, $lon"
+                        latitude = loc.latitude
+                        longitude = loc.longitude
+                        rawLocation = "${loc.latitude}, ${loc.longitude}"
                         locationError = null
                     },
                     onError = { err ->
@@ -271,11 +271,11 @@ fun AddExpertDialog(
             isFetchingLocation = true
             LocationHelper.fetchCurrentLocation(
                 context = context,
-                onSuccess = { lat, lon ->
+                onSuccess = { loc ->
                     isFetchingLocation = false
-                    latitude = lat
-                    longitude = lon
-                    rawLocation = "$lat, $lon"
+                    latitude = loc.latitude
+                    longitude = loc.longitude
+                    rawLocation = "${loc.latitude}, ${loc.longitude}"
                     locationError = null
                 },
                 onError = { err ->
@@ -447,7 +447,7 @@ fun AddExpertDialog(
                     address = address.trim().ifBlank { "Local Area" },
                     latitude = finalLat,
                     longitude = finalLng,
-                    profilePicUrl = profilePicUrl ?: "",
+                    profilePicUrl = profilePicUrl,
                     isAvailable = isAvailable,
                     added_by_user_id = currentUserId.ifBlank { null },
                     added_by_user_name = currentUserName.ifBlank { "Admin" },
@@ -460,7 +460,7 @@ fun AddExpertDialog(
                     address = address.trim().ifBlank { "Local Area" },
                     latitude = finalLat,
                     longitude = finalLng,
-                    profilePicUrl = profilePicUrl ?: "",
+                    profilePicUrl = profilePicUrl,
                     isAvailable = isAvailable,
                     last_updated = System.currentTimeMillis()
                 )

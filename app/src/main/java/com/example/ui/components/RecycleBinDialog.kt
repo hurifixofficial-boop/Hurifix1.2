@@ -56,8 +56,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.ui.animation.SlideUpModalDialog
-import com.example.ui.animation.FramerAnimatedScreen
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.data.model.CustomerJobEntity
@@ -187,9 +185,13 @@ fun RecycleBinDialog(
         }
     }
 
-    SlideUpModalDialog(
-        onDismissRequest = onDismiss
-    ) { dismissWithAnimation ->
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
+    ) {
         Surface(
             modifier = Modifier.fillMaxSize(),
             shape = androidx.compose.ui.graphics.RectangleShape,
@@ -250,7 +252,7 @@ fun RecycleBinDialog(
                                     Text("Empty Bin", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                 }
                             }
-                            IconButton(onClick = dismissWithAnimation) {
+                            IconButton(onClick = onDismiss) {
                                 Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
                             }
                         }
@@ -323,11 +325,7 @@ fun RecycleBinDialog(
                 }
 
                 // Content
-                FramerAnimatedScreen(
-                    targetState = selectedTab,
-                    label = "RecycleBinTabTransition"
-                ) { currentTab ->
-                    when (currentTab) {
+                when (selectedTab) {
                     0 -> {
                         if (deletedJobs.isEmpty()) {
                             EmptyBinState(itemName = "orders")
@@ -412,7 +410,6 @@ fun RecycleBinDialog(
                             }
                         }
                     }
-                }
                 }
             }
         }

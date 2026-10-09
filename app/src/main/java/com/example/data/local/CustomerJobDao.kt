@@ -31,18 +31,18 @@ interface CustomerJobDao {
     @Query("DELETE FROM customer_jobs WHERE isDeleted = 1")
     suspend fun clearRecycleBin()
 
-    @Query("SELECT * FROM customer_jobs WHERE is_synced = 0")
-    suspend fun getUnsyncedJobs(): List<CustomerJobEntity>
+    @Query("UPDATE customer_jobs SET managed_by_user_id = :userId, managed_by_user_name = :userName, managed_by_designation = :designation, last_updated = :timestamp WHERE id = :jobId")
+    suspend fun updateJobManager(jobId: Long, userId: String, userName: String, designation: String?, timestamp: Long)
+
+    @Query("SELECT * FROM customer_jobs WHERE customerPhone = :phone AND createdAt >= :sinceTimestamp ORDER BY id DESC LIMIT 1")
+    suspend fun findRecentOrderByPhone(phone: String, sinceTimestamp: Long): CustomerJobEntity?
+
+    @Query("UPDATE customer_jobs SET status = :status, assignedExpertId = :expertId, assignedExpertName = :expertName, assignedExpertPhone = :expertPhone, distanceKmAtDispatch = :distanceKm, assigned_at_timestamp = :assignedAt WHERE id = :jobId")
+    suspend fun updateJobDispatch(jobId: Long, status: String, expertId: Long, expertName: String, expertPhone: String, distanceKm: Double, assignedAt: Long)
 
     @Query("UPDATE customer_jobs SET is_synced = 1 WHERE id = :jobId")
     suspend fun markJobSynced(jobId: Long)
 
-    @Query("UPDATE customer_jobs SET managed_by_user_id = :userId, managed_by_user_name = :userName, managed_by_designation = :userDesignation, last_updated = :lastUpdated WHERE id = :jobId")
-    suspend fun updateJobManager(jobId: Long, userId: String?, userName: String?, userDesignation: String?, lastUpdated: Long)
-
-    @Query("SELECT * FROM customer_jobs WHERE customerPhone = :phone AND createdAt >= :since AND isDeleted = 0 LIMIT 1")
-    suspend fun findRecentOrderByPhone(phone: String, since: Long): CustomerJobEntity?
-
-    @Query("UPDATE customer_jobs SET status = :status, assignedExpertId = :expertId, assignedExpertName = :expertName, assignedExpertPhone = :expertPhone, distanceKmAtDispatch = :distanceKm, assigned_at_timestamp = :assignedAt, last_updated = :assignedAt WHERE id = :jobId")
-    suspend fun updateJobDispatch(jobId: Long, status: String, expertId: Long, expertName: String, expertPhone: String, distanceKm: Double, assignedAt: Long)
+    @Query("SELECT * FROM customer_jobs WHERE is_synced = 0")
+    suspend fun getUnsyncedJobs(): List<CustomerJobEntity>
 }

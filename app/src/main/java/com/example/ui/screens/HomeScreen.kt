@@ -2,12 +2,9 @@ package com.example.ui.screens
 
 import android.content.Context
 import android.widget.Toast
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import com.example.ui.animation.MotionTransitions
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -200,21 +197,12 @@ fun HomeScreen(
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // Smooth BackHandler: close navigation drawer if open, or return to Orders tab if on Experts tab
-    BackHandler(enabled = drawerState.isOpen || currentMainTab == MainTab.EXPERTS) {
-        if (drawerState.isOpen) {
-            coroutineScope.launch { drawerState.close() }
-        } else if (currentMainTab == MainTab.EXPERTS) {
-            viewModel.selectMainTab(MainTab.CUSTOMER_ORDERS)
-        }
-    }
-
-    val rawExperts by viewModel.allExperts.collectAsState()
+    val rawExperts by viewModel.allExperts.collectAsState(initial = emptyList())
     val experts = remember(rawExperts) { rawExperts.filter { !it.isDeleted } }
-    val allJobs by viewModel.allJobs.collectAsState()
-    val allCategories by viewModel.allCategories.collectAsState()
-    val deletedJobs by viewModel.deletedJobs.collectAsState()
-    val deletedExperts by viewModel.deletedExperts.collectAsState()
+    val allJobs by viewModel.allJobs.collectAsState(initial = emptyList())
+    val allCategories by viewModel.allCategories.collectAsState(initial = emptyList())
+    val deletedJobs by viewModel.deletedJobs.collectAsState(initial = emptyList())
+    val deletedExperts by viewModel.deletedExperts.collectAsState(initial = emptyList())
     val currentMainTab by viewModel.currentMainTab.collectAsState()
     val currentCustomerSubTab by viewModel.currentCustomerSubTab.collectAsState()
     val currentOrderStatusTab by viewModel.currentOrderStatusTab.collectAsState()
@@ -289,7 +277,7 @@ fun HomeScreen(
     var collisionWarningTarget by remember { mutableStateOf<OrderCollisionTarget?>(null) }
 
     fun checkCollisionAndExecute(job: CustomerJobEntity, onProceed: () -> Unit) {
-        val currentUserId = sessionManager.getUserPhone().replace(Regex("[^0-9]"), "")
+        val currentUserId = sessionManager.getUserPhone()?.replace(Regex("[^0-9]"), "") ?: ""
         val jobManagerId = job.managed_by_user_id?.replace(Regex("[^0-9]"), "") ?: ""
         val isManagedByOther = jobManagerId.isNotBlank() && jobManagerId != currentUserId
 
@@ -807,84 +795,74 @@ fun HomeScreen(
                     .fillMaxSize()
                     .padding(paddingValues)
             ) {
-                AnimatedContent(
-                    targetState = currentMainTab,
-                    transitionSpec = {
-                        val forward = targetState == MainTab.EXPERTS
-                        MotionTransitions.tabTransition(forward)
-                    },
-                    label = "HomeScreenMainTabTransition",
-                    modifier = Modifier.fillMaxSize()
-                ) { mainTab ->
-                    when (mainTab) {
-                        MainTab.CUSTOMER_ORDERS -> {
-                            CustomerOrdersSection(
-                                viewModel = viewModel,
-                                allJobs = allJobs,
-                                currentSubTab = currentCustomerSubTab,
-                                currentOrderStatusTab = currentOrderStatusTab,
-                                canManageOrders = sessionManager.canManageOrders(),
-                                canDeleteOrders = sessionManager.canDeleteOrders(),
-                                isViewOnly = sessionManager.isViewOnly(),
-                                onOpenWhatsAppParser = { showWhatsAppParserDialog = true },
-                                onOrderSaved = { savedJob ->
-                                    showSaveChoicePopup = savedJob
-                                },
-                                onOpenNearestExperts = { job ->
-                                    checkCollisionAndExecute(job) {
-                                        viewModel.openFindNearestExperts(job)
-                                    }
-                                },
-                                onCompleteOrCancelAction = { job, isComplete ->
-                                    checkCollisionAndExecute(job) {
-                                        if (isComplete) {
-                                            showCompletionCustomerWhatsAppJob = job
-                                        } else {
-                                            reviewJobTarget = Pair(job, false)
-                                        }
-                                    }
-                                },
-                                onShowCompletedDetail = { job ->
-                                    showCompletedDetailJob = job
-                                },
-                                onDeleteJob = { job ->
-                                    checkCollisionAndExecute(job) {
-                                        deleteTarget = DeleteTarget.Job(job)
-                                    }
-                                },
-                                onLongPressOrder = { job ->
-                                    activeLongPressJob = job
+                when (currentMainTab) {
+                    MainTab.CUSTOMER_ORDERS -> {
+                        CustomerOrdersSection(
+                            viewModel = viewModel,
+                            allJobs = allJobs,
+                            currentSubTab = currentCustomerSubTab,
+                            currentOrderStatusTab = currentOrderStatusTab,
+                            canManageOrders = sessionManager.canManageOrders(),
+                            canDeleteOrders = sessionManager.canDeleteOrders(),
+                            isViewOnly = sessionManager.isViewOnly(),
+                            onOpenWhatsAppParser = { showWhatsAppParserDialog = true },
+                            onOrderSaved = { savedJob ->
+                                showSaveChoicePopup = savedJob
+                            },
+                            onOpenNearestExperts = { job ->
+                                checkCollisionAndExecute(job) {
+                                    viewModel.openFindNearestExperts(job)
                                 }
-                            )
-                        }
-
-                        MainTab.EXPERTS -> {
-                            val categoryNames = remember(allCategories) {
-                                allCategories.map { it.name }
+                            },
+                            onCompleteOrCancelAction = { job, isComplete ->
+                                checkCollisionAndExecute(job) {
+                                    if (isComplete) {
+                                        showCompletionCustomerWhatsAppJob = job
+                                    } else {
+                                        reviewJobTarget = Pair(job, false)
+                                    }
+                                }
+                            },
+                            onShowCompletedDetail = { job ->
+                                showCompletedDetailJob = job
+                            },
+                            onDeleteJob = { job ->
+                                checkCollisionAndExecute(job) {
+                                    deleteTarget = DeleteTarget.Job(job)
+                                }
+                            },
+                            onLongPressOrder = { job ->
+                                activeLongPressJob = job
                             }
-                            ExpertsTabContent(
-                                experts = experts,
-                                categories = allCategories,
-                                canAddExperts = sessionManager.canAddExperts() && !sessionManager.isViewOnly(),
-                                isAdmin = sessionManager.isAdmin(),
-                                onAddNewCategory = { viewModel.addNewCategory(it) },
-                                onDeleteCategory = { deleteTarget = DeleteTarget.Category(it) },
-                                onEditExpert = { expert ->
-                                    expertToEdit = expert
-                                    showAddExpertDialog = true
-                                },
-                                onDeleteExpert = { expert ->
-                                    viewModel.deleteExpert(expert)
-                                },
-                                onToggleAvailability = { exp, avail -> viewModel.updateExpert(exp.copy(isAvailable = avail)) },
-                                onViewWorkHistory = { expert -> expertForWorkHistory = expert },
-                                onSendWelcome = { expert -> showWelcomeExpertDialog = expert },
-                                onAddExpert = {
-                                    expertToEdit = null
-                                    showAddExpertDialog = true
-                                }
-                            )
+                        )
+                    }
+
+                    MainTab.EXPERTS -> {
+                        val categoryNames = remember(allCategories) {
+                            allCategories.map { it.name }
                         }
+                        ExpertsTabContent(
+                            experts = experts,
+                            categories = allCategories,
+                            canAddExperts = sessionManager.canAddExperts() && !sessionManager.isViewOnly(),
+                            isAdmin = sessionManager.isAdmin(),
+                            onAddNewCategory = { viewModel.addNewCategory(it) },
+                            onDeleteCategory = { deleteTarget = DeleteTarget.Category(it) },
+                            onEditExpert = { expert ->
+                                expertToEdit = expert
+                                showAddExpertDialog = true
+                            },
+                            onDeleteExpert = { expert ->
+                                viewModel.deleteExpert(expert)
+                            },
+                            onToggleAvailability = { exp, avail -> viewModel.updateExpert(exp.copy(isAvailable = avail)) },
+                            onViewWorkHistory = { expert -> expertForWorkHistory = expert },
+                            onSendWelcome = { expert -> showWelcomeExpertDialog = expert },
+                            onAddExpert = {
+                                expertToEdit = null
+                                showAddExpertDialog = true
+                            }
+                        )
                     }
                 }
             }
@@ -1040,7 +1018,8 @@ fun HomeScreen(
                 viewModel.markMessageLaterDismissed(job.id)
                 val estimatedTimeText = WhatsAppHelper.calculateEstimatedArrivalTimeWithBuffer(ranked.distanceKm)
                 showAssignCustomerWhatsAppPopup = Triple(job, ranked, estimatedTimeText)
-            }
+            },
+            onAssigned = { }
         )
     }
 
@@ -1212,7 +1191,7 @@ fun HomeScreen(
 
     // Dialog 11b-3: Order Collision Protection Warning Dialog
     collisionWarningTarget?.let { target ->
-        val currentUserId = sessionManager.getUserPhone().replace(Regex("[^0-9]"), "")
+        val currentUserId = sessionManager.getUserPhone()?.replace(Regex("[^0-9]"), "") ?: ""
         val currentUserName = sessionManager.getUserName().ifBlank { "User" }
         val currentUserDesignation = sessionManager.getUserDesignationTag()
 
@@ -1397,7 +1376,7 @@ private fun CustomerOrdersSection(
     LaunchedEffect(currentSubTab) {
         val page = if (currentSubTab == CustomerSubTab.DISPATCH_ORDER) 0 else 1
         if (subTabPagerState.currentPage != page) {
-            subTabPagerState.animateScrollToPage(page, animationSpec = MotionTransitions.PagerScrollSpec)
+            subTabPagerState.animateScrollToPage(page)
         }
     }
 
@@ -1410,14 +1389,14 @@ private fun CustomerOrdersSection(
             Tab(
                 selected = subTabPagerState.currentPage == 0,
                 onClick = {
-                    coroutineScope.launch { subTabPagerState.animateScrollToPage(0, animationSpec = MotionTransitions.PagerScrollSpec) }
+                    coroutineScope.launch { subTabPagerState.animateScrollToPage(0) }
                 },
                 text = { Text("📝 Dispatch Order", fontWeight = FontWeight.SemiBold) }
             )
             Tab(
                 selected = subTabPagerState.currentPage == 1,
                 onClick = {
-                    coroutineScope.launch { subTabPagerState.animateScrollToPage(1, animationSpec = MotionTransitions.PagerScrollSpec) }
+                    coroutineScope.launch { subTabPagerState.animateScrollToPage(1) }
                 },
                 text = { Text("📋 Orders (${allJobs.size})", fontWeight = FontWeight.SemiBold) }
             )
@@ -1470,7 +1449,7 @@ private fun DispatchOrderFormContent(
 ) {
     val context = LocalContext.current
     val form by viewModel.customerForm.collectAsState()
-    val allCategories by viewModel.allCategories.collectAsState()
+    val allCategories by viewModel.allCategories.collectAsState(initial = emptyList())
 
     val cleanPhone = remember(form.phone) { form.phone.filter { it.isDigit() }.take(10) }
     val isPhoneValid = cleanPhone.length == 10
@@ -1825,7 +1804,7 @@ private fun OrdersListContent(
     // Synchronize tab click with pager scroll
     LaunchedEffect(currentStatusTab) {
         if (pagerState.currentPage != currentStatusTab.ordinal) {
-            pagerState.animateScrollToPage(currentStatusTab.ordinal, animationSpec = MotionTransitions.PagerScrollSpec)
+            pagerState.animateScrollToPage(currentStatusTab.ordinal)
         }
     }
 
@@ -1931,7 +1910,7 @@ private fun OrdersListContent(
                                 selected = isSelected,
                                 onClick = {
                                     onSelectStatusTab(tab)
-                                    coroutineScope.launch { pagerState.animateScrollToPage(tab.ordinal, animationSpec = MotionTransitions.PagerScrollSpec) }
+                                    coroutineScope.launch { pagerState.animateScrollToPage(tab.ordinal) }
                                 },
                                 label = {
                                     Text(
@@ -2871,7 +2850,7 @@ private fun ExpertsTabContent(
                                     .clip(RoundedCornerShape(8.dp))
                                     .combinedClickable(
                                         onClick = {
-                                            coroutineScope.launch { categoryPagerState.animateScrollToPage(index, animationSpec = MotionTransitions.PagerScrollSpec) }
+                                            coroutineScope.launch { categoryPagerState.animateScrollToPage(index) }
                                         },
                                         onLongClick = {
                                             if (catEntity != null && !catEntity.isDefault && catEntity.name != "Electrician" && catEntity.name != "Plumber") {

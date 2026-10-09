@@ -56,7 +56,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
-import com.example.ui.animation.SlideUpModalDialog
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
@@ -549,7 +548,8 @@ fun AssignExpertWhatsAppConfirmDialog(
     job: CustomerJobEntity,
     ranked: com.example.data.model.RankedExpert,
     onSendWhatsApp: () -> Unit,
-    onLater: () -> Unit
+    onLater: () -> Unit,
+    onAssigned: () -> Unit = {}
 ) {
     val expert = ranked.expert
 
@@ -1094,9 +1094,11 @@ fun EditCustomerOrderDialog(
         LocationHelper.parseCoordinatesFromText(rawLocation)
     }
 
-    SlideUpModalDialog(
-        onDismissRequest = onDismiss
-    ) { dismissWithAnimation ->
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        BackHandler { onDismiss() }
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             topBar = {
@@ -1119,7 +1121,7 @@ fun EditCustomerOrderDialog(
                         }
                     },
                     navigationIcon = {
-                        IconButton(onClick = dismissWithAnimation) {
+                        IconButton(onClick = onDismiss) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                         }
                     },
@@ -1150,7 +1152,7 @@ fun EditCustomerOrderDialog(
                         ) {
                             if (!isLockedForStaff) {
                                 OutlinedButton(
-                                    onClick = dismissWithAnimation,
+                                    onClick = onDismiss,
                                     modifier = Modifier.weight(1f)
                                 ) {
                                     Text("Cancel")
@@ -1169,7 +1171,7 @@ fun EditCustomerOrderDialog(
                                             status = if (isAdmin) selectedStatus else job.status
                                         )
                                         onSave(updated)
-                                        dismissWithAnimation()
+                                        onDismiss()
                                     },
                                     enabled = name.isNotBlank() && isPhoneValid && serviceType.isNotBlank() && parsedCoords != null,
                                     modifier = Modifier.weight(1f)
@@ -1178,7 +1180,7 @@ fun EditCustomerOrderDialog(
                                 }
                             } else {
                                 Button(
-                                    onClick = dismissWithAnimation,
+                                    onClick = onDismiss,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Text("Close (View Only)")
@@ -1478,9 +1480,11 @@ fun EditUserProfileDialog(
     val cleanPhone = remember(userPhone) { userPhone.filter { it.isDigit() }.take(10) }
     val isPhoneValid = cleanPhone.length == 10
 
-    SlideUpModalDialog(
-        onDismissRequest = onDismiss
-    ) { dismissWithAnimation ->
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        BackHandler { onDismiss() }
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             topBar = {
@@ -1512,7 +1516,7 @@ fun EditUserProfileDialog(
                         }
                     },
                     navigationIcon = {
-                        IconButton(onClick = dismissWithAnimation) {
+                        IconButton(onClick = onDismiss) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                         }
                     },
@@ -1542,7 +1546,7 @@ fun EditUserProfileDialog(
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             OutlinedButton(
-                                onClick = dismissWithAnimation,
+                                onClick = onDismiss,
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Text("Cancel")
@@ -1553,7 +1557,7 @@ fun EditUserProfileDialog(
                                         onUpdatePassword?.invoke(newPassword.trim())
                                     }
                                     onSave(userName.trim(), cleanPhone, userRole.trim(), photoUri)
-                                    dismissWithAnimation()
+                                    onDismiss()
                                 },
                                 enabled = userName.isNotBlank() && isPhoneValid,
                                 modifier = Modifier.weight(1f)

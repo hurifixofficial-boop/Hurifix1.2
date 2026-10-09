@@ -92,8 +92,6 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.surfaceColorAtElevation
-import com.example.ui.animation.SlideUpModalDialog
-import com.example.ui.animation.FramerAnimatedScreen
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -219,9 +217,13 @@ fun UserManagementDialog(
         )
     }
 
-    SlideUpModalDialog(
-        onDismissRequest = onDismiss
-    ) { dismissWithAnimation ->
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
+    ) {
         Surface(
             modifier = Modifier.fillMaxSize(),
             shape = androidx.compose.ui.graphics.RectangleShape,
@@ -266,7 +268,7 @@ fun UserManagementDialog(
                             }
                         }
 
-                        IconButton(onClick = dismissWithAnimation) {
+                        IconButton(onClick = onDismiss) {
                             Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(26.dp))
                         }
                     }
@@ -322,11 +324,7 @@ fun UserManagementDialog(
                         .fillMaxWidth()
                         .weight(1f)
                 ) {
-                    FramerAnimatedScreen(
-                        targetState = selectedAdminTab,
-                        label = "AdminTabTransition"
-                    ) { currentTab ->
-                        if (currentTab == 0) {
+                    if (selectedAdminTab == 0) {
                     // TAB 0: TEAM MEMBERS & DESIGNATION MANAGEMENT
                     val teamListState = rememberLazyListState()
                     val isTeamListScrolledDown by remember {
@@ -436,7 +434,7 @@ fun UserManagementDialog(
                             )
                         }
                     }
-                } else if (currentTab == 1) {
+                } else if (selectedAdminTab == 1) {
                     // TAB 1: ADMIN BACKUP & GOOGLE DRIVE CONTROL CENTER
                     LazyColumn(
                         modifier = Modifier
@@ -727,7 +725,6 @@ fun UserManagementDialog(
                 } else {
                     // TAB 2: ORDER ACTIVITY HISTORY AUDIT LOG
                     OrderActivityHistoryContent(allJobs = allJobs)
-                }
                 }
             }
         }
@@ -1124,9 +1121,11 @@ private fun AddTeamMemberDialog(
 
     val presetDesignations = remember { HurifixUser.DEFAULT_DESIGNATION_PRESETS }
 
-    SlideUpModalDialog(
-        onDismissRequest = onDismiss
-    ) { dismissWithAnimation ->
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        BackHandler { onDismiss() }
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             topBar = {
@@ -1166,7 +1165,7 @@ private fun AddTeamMemberDialog(
                             }
                         }
 
-                        IconButton(onClick = dismissWithAnimation) {
+                        IconButton(onClick = onDismiss) {
                             Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(26.dp))
                         }
                     }
@@ -1195,7 +1194,7 @@ private fun AddTeamMemberDialog(
                         ) {
                             // Cancel button on left side
                             OutlinedButton(
-                                onClick = dismissWithAnimation,
+                                onClick = onDismiss,
                                 modifier = Modifier
                                     .weight(1f)
                                     .height(52.dp),
@@ -1423,9 +1422,11 @@ private fun EditRoleAndPermissionsDialog(
 
     val presetDesignations = remember { HurifixUser.DEFAULT_DESIGNATION_PRESETS }
 
-    SlideUpModalDialog(
-        onDismissRequest = onDismiss
-    ) { dismissWithAnimation ->
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        BackHandler { onDismiss() }
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             topBar = {
@@ -1445,7 +1446,7 @@ private fun EditRoleAndPermissionsDialog(
                         }
                     },
                     navigationIcon = {
-                        IconButton(onClick = dismissWithAnimation) {
+                        IconButton(onClick = onDismiss) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                         }
                     },
@@ -1475,7 +1476,7 @@ private fun EditRoleAndPermissionsDialog(
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             OutlinedButton(
-                                onClick = dismissWithAnimation,
+                                onClick = onDismiss,
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Text("Cancel")
