@@ -548,8 +548,7 @@ fun AssignExpertWhatsAppConfirmDialog(
     job: CustomerJobEntity,
     ranked: com.example.data.model.RankedExpert,
     onSendWhatsApp: () -> Unit,
-    onLater: () -> Unit,
-    onAssigned: () -> Unit = {}
+    onLater: () -> Unit
 ) {
     val expert = ranked.expert
 

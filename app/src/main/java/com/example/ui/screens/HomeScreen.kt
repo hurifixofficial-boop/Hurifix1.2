@@ -197,12 +197,12 @@ fun HomeScreen(
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val snackbarHostState = remember { SnackbarHostState() }
 
-    val rawExperts by viewModel.allExperts.collectAsState(initial = emptyList())
+    val rawExperts by viewModel.allExperts.collectAsState()
     val experts = remember(rawExperts) { rawExperts.filter { !it.isDeleted } }
-    val allJobs by viewModel.allJobs.collectAsState(initial = emptyList())
-    val allCategories by viewModel.allCategories.collectAsState(initial = emptyList())
-    val deletedJobs by viewModel.deletedJobs.collectAsState(initial = emptyList())
-    val deletedExperts by viewModel.deletedExperts.collectAsState(initial = emptyList())
+    val allJobs by viewModel.allJobs.collectAsState()
+    val allCategories by viewModel.allCategories.collectAsState()
+    val deletedJobs by viewModel.deletedJobs.collectAsState()
+    val deletedExperts by viewModel.deletedExperts.collectAsState()
     val currentMainTab by viewModel.currentMainTab.collectAsState()
     val currentCustomerSubTab by viewModel.currentCustomerSubTab.collectAsState()
     val currentOrderStatusTab by viewModel.currentOrderStatusTab.collectAsState()
@@ -277,7 +277,7 @@ fun HomeScreen(
     var collisionWarningTarget by remember { mutableStateOf<OrderCollisionTarget?>(null) }
 
     fun checkCollisionAndExecute(job: CustomerJobEntity, onProceed: () -> Unit) {
-        val currentUserId = sessionManager.getUserPhone()?.replace(Regex("[^0-9]"), "") ?: ""
+        val currentUserId = sessionManager.getUserPhone().replace(Regex("[^0-9]"), "")
         val jobManagerId = job.managed_by_user_id?.replace(Regex("[^0-9]"), "") ?: ""
         val isManagedByOther = jobManagerId.isNotBlank() && jobManagerId != currentUserId
 
@@ -1018,8 +1018,7 @@ fun HomeScreen(
                 viewModel.markMessageLaterDismissed(job.id)
                 val estimatedTimeText = WhatsAppHelper.calculateEstimatedArrivalTimeWithBuffer(ranked.distanceKm)
                 showAssignCustomerWhatsAppPopup = Triple(job, ranked, estimatedTimeText)
-            },
-            onAssigned = { }
+            }
         )
     }
 
@@ -1191,7 +1190,7 @@ fun HomeScreen(
 
     // Dialog 11b-3: Order Collision Protection Warning Dialog
     collisionWarningTarget?.let { target ->
-        val currentUserId = sessionManager.getUserPhone()?.replace(Regex("[^0-9]"), "") ?: ""
+        val currentUserId = sessionManager.getUserPhone().replace(Regex("[^0-9]"), "")
         val currentUserName = sessionManager.getUserName().ifBlank { "User" }
         val currentUserDesignation = sessionManager.getUserDesignationTag()
 
@@ -1449,7 +1448,7 @@ private fun DispatchOrderFormContent(
 ) {
     val context = LocalContext.current
     val form by viewModel.customerForm.collectAsState()
-    val allCategories by viewModel.allCategories.collectAsState(initial = emptyList())
+    val allCategories by viewModel.allCategories.collectAsState()
 
     val cleanPhone = remember(form.phone) { form.phone.filter { it.isDigit() }.take(10) }
     val isPhoneValid = cleanPhone.length == 10

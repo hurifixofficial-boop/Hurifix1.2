@@ -30,19 +30,4 @@ interface CustomerJobDao {
 
     @Query("DELETE FROM customer_jobs WHERE isDeleted = 1")
     suspend fun clearRecycleBin()
-
-    @Query("UPDATE customer_jobs SET managed_by_user_id = :userId, managed_by_user_name = :userName, managed_by_designation = :designation, last_updated = :timestamp WHERE id = :jobId")
-    suspend fun updateJobManager(jobId: Long, userId: String, userName: String, designation: String?, timestamp: Long)
-
-    @Query("SELECT * FROM customer_jobs WHERE customerPhone = :phone AND createdAt >= :sinceTimestamp ORDER BY id DESC LIMIT 1")
-    suspend fun findRecentOrderByPhone(phone: String, sinceTimestamp: Long): CustomerJobEntity?
-
-    @Query("UPDATE customer_jobs SET status = :status, assignedExpertId = :expertId, assignedExpertName = :expertName, assignedExpertPhone = :expertPhone, distanceKmAtDispatch = :distanceKm, assigned_at_timestamp = :assignedAt WHERE id = :jobId")
-    suspend fun updateJobDispatch(jobId: Long, status: String, expertId: Long, expertName: String, expertPhone: String, distanceKm: Double, assignedAt: Long)
-
-    @Query("UPDATE customer_jobs SET is_synced = 1 WHERE id = :jobId")
-    suspend fun markJobSynced(jobId: Long)
-
-    @Query("SELECT * FROM customer_jobs WHERE is_synced = 0")
-    suspend fun getUnsyncedJobs(): List<CustomerJobEntity>
 }

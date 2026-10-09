@@ -21,10 +21,4 @@ interface ExpertCategoryDao {
 
     @Query("DELETE FROM expert_categories WHERE id = :id")
     suspend fun deleteCategory(id: Long)
-
-    @Query("UPDATE expert_categories SET is_synced = 1 WHERE id = :id")
-    suspend fun markCategorySynced(id: Long)
-
-    @Query("SELECT * FROM expert_categories WHERE is_synced = 0")
-    suspend fun getUnsyncedCategories(): List<ExpertCategoryEntity>
 }

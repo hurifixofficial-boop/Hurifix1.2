@@ -30,10 +30,4 @@ interface ExpertDao {
 
     @Query("DELETE FROM experts WHERE isDeleted = 1")
     suspend fun clearRecycleBin()
-
-    @Query("UPDATE experts SET is_synced = 1 WHERE id = :id")
-    suspend fun markExpertSynced(id: Long)
-
-    @Query("SELECT * FROM experts WHERE is_synced = 0")
-    suspend fun getUnsyncedExperts(): List<ExpertEntity>
 }
