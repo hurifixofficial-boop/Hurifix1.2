@@ -4,7 +4,59 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path
-        android:fillColor="#3B82F6"
-        android:pathData="M54,20L84,80H24Z"/>
+
+    <!-- Scaled and centered to fit perfectly within the 72dp Android safe zone (central 66% of the 108dp canvas) -->
+    <group
+        android:scaleX="0.33"
+        android:scaleY="0.33"
+        android:translateX="21"
+        android:translateY="21">
+
+        <!-- Black Chimney (sitting behind the house and roof) -->
+        <path
+            android:fillColor="#000000"
+            android:pathData="M 122,40 L 138,40 L 138,90 L 122,90 Z" />
+
+        <!-- Solid House Yellow/Gold Body Fill -->
+        <path
+            android:fillColor="#F9C710"
+            android:pathData="M 100,48 L 145,93 L 145,155 Q 145,160 140,160 L 60,160 Q 55,160 55,155 L 55,93 Z" />
+
+        <!-- Black Roof Gable -->
+        <path
+            android:strokeColor="#000000"
+            android:strokeWidth="14"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M 38,100 L 100,45 L 162,100" />
+
+        <!-- Black Wrench Handle -->
+        <path
+            android:strokeColor="#000000"
+            android:strokeWidth="18"
+            android:strokeLineCap="round"
+            android:pathData="M 55,145 L 115,85" />
+
+        <!-- White Cutout Hole in Wrench Handle -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M 55,145 m -4,0 a 4,4 0 1 1 8,0 a 4,4 0 1 1 -8,0" />
+
+        <!-- Black Wrench Head Outer Circle -->
+        <path
+            android:fillColor="#000000"
+            android:pathData="M 125,75 m -22,0 a 22,22 0 1 1 44,0 a 22,22 0 1 1 -44,0" />
+
+        <!-- Yellow Wrench Jaw Rounded Inner Cutout -->
+        <path
+            android:fillColor="#F9C710"
+            android:pathData="M 125,75 m -10,0 a 10,10 0 1 1 20,0 a 10,10 0 1 1 -20,0" />
+
+        <!-- Yellow Wrench Jaw Channel Cutout -->
+        <path
+            android:fillColor="#F9C710"
+            android:pathData="M 118,68 L 132,82 L 158,56 L 144,42 Z" />
+
+    </group>
+
 </vector>

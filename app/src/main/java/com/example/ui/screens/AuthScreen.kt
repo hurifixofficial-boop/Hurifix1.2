@@ -67,6 +67,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
+import androidx.compose.animation.AnimatedContent
+import com.example.ui.animation.MotionTransitions
 import com.example.data.firebase.FirestoreSyncManager
 import com.example.data.model.HurifixUser
 import com.example.ui.components.OtpVerificationDialog
@@ -264,91 +266,132 @@ fun AuthScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    if (!isOtpLoginMode) {
-                        // MODE 1: Standard Password Input Box
-                        OutlinedTextField(
-                            value = password,
-                            onValueChange = {
-                                password = it
-                                errorMessage = null
-                            },
-                            label = { Text("Password / PIN *") },
-                            leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
-                            trailingIcon = {
-                                IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                                    Icon(
-                                        if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                        contentDescription = null
-                                    )
-                                }
-                            },
-                            visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-
-                        // Small text options row below password box
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            TextButton(
-                                onClick = {
-                                    // Switches view to OTP mode without sending OTP directly!
-                                    isOtpLoginMode = true
-                                    isOtpSent = false
-                                    errorMessage = null
-                                }
-                            ) {
-                                Text(
-                                    text = "📲 Login with OTP",
-                                    fontSize = 12.5.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-
-                            TextButton(
-                                onClick = {
-                                    forgotPasswordPhone = phone
-                                    resetPasswordError = null
-                                    showForgotPasswordPhoneDialog = true
-                                }
-                            ) {
-                                Text("Forgot Password?", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
-                            }
-                        }
-                    } else {
-                        // MODE 2: OTP Login Mode (Replaces Password Box)
-                        if (isOtpSent) {
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AnimatedContent(
+                        targetState = isOtpLoginMode to isOtpSent,
+                        transitionSpec = {
+                            MotionTransitions.verticalModeTransition(downward = targetState.first)
+                        },
+                        label = "AuthModeTransition"
+                    ) { (otpMode, otpSent) ->
+                        if (!otpMode) {
+                            // MODE 1: Standard Password Input Box
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 OutlinedTextField(
-                                    value = loginOtpInput,
-                                    onValueChange = { input ->
-                                        loginOtpInput = input.filter { it.isDigit() }.take(6)
+                                    value = password,
+                                    onValueChange = {
+                                        password = it
                                         errorMessage = null
                                     },
-                                    label = { Text("Enter 6-Digit OTP Code *") },
-                                    placeholder = { Text("123456") },
+                                    label = { Text("Password / PIN *") },
                                     leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    trailingIcon = {
+                                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                            Icon(
+                                                if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                                contentDescription = null
+                                            )
+                                        }
+                                    },
+                                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                                     singleLine = true,
-                                    textStyle = MaterialTheme.typography.titleMedium.copy(
-                                        textAlign = TextAlign.Center,
-                                        letterSpacing = 3.sp,
-                                        fontWeight = FontWeight.Bold
-                                    ),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .testTag("otp_input_field")
+                                    modifier = Modifier.fillMaxWidth()
                                 )
 
+                                // Small text options row below password box
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    TextButton(
+                                        onClick = {
+                                            // Switches view to OTP mode without sending OTP directly!
+                                            isOtpLoginMode = true
+                                            isOtpSent = false
+                                            errorMessage = null
+                                        }
+                                    ) {
+                                        Text(
+                                            text = "📲 Login with OTP",
+                                            fontSize = 12.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+
+                                    TextButton(
+                                        onClick = {
+                                            forgotPasswordPhone = phone
+                                            resetPasswordError = null
+                                            showForgotPasswordPhoneDialog = true
+                                        }
+                                    ) {
+                                        Text("Forgot Password?", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+                                    }
+                                }
+                            }
+                        } else {
+                            // MODE 2: OTP Login Mode (Replaces Password Box)
+                            if (otpSent) {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedTextField(
+                                        value = loginOtpInput,
+                                        onValueChange = { input ->
+                                            loginOtpInput = input.filter { it.isDigit() }.take(6)
+                                            errorMessage = null
+                                        },
+                                        label = { Text("Enter 6-Digit OTP Code *") },
+                                        placeholder = { Text("123456") },
+                                        leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                        singleLine = true,
+                                        textStyle = MaterialTheme.typography.titleMedium.copy(
+                                            textAlign = TextAlign.Center,
+                                            letterSpacing = 3.sp,
+                                            fontWeight = FontWeight.Bold
+                                        ),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("otp_input_field")
+                                    )
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        TextButton(
+                                            onClick = {
+                                                isOtpLoginMode = false
+                                                errorMessage = null
+                                            }
+                                        ) {
+                                            Text(
+                                                text = "🔑 Login with Password",
+                                                fontSize = 12.5.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+
+                                        TextButton(
+                                            onClick = { sendLoginOtpIfRegistered() },
+                                            enabled = !isSendingOtp && resendTimerSeconds == 0
+                                        ) {
+                                            if (resendTimerSeconds > 0) {
+                                                Text("Resend in ${resendTimerSeconds}s", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            } else {
+                                                Text("🔄 Resend OTP", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                // Link to go back to password mode before OTP is requested
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.Start
                                 ) {
                                     TextButton(
                                         onClick = {
@@ -357,43 +400,12 @@ fun AuthScreen(
                                         }
                                     ) {
                                         Text(
-                                            text = "🔑 Login with Password",
+                                            text = "🔑 Switch to Password Login",
                                             fontSize = 12.5.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = MaterialTheme.colorScheme.primary
                                         )
                                     }
-
-                                    TextButton(
-                                        onClick = { sendLoginOtpIfRegistered() },
-                                        enabled = !isSendingOtp && resendTimerSeconds == 0
-                                    ) {
-                                        if (resendTimerSeconds > 0) {
-                                            Text("Resend in ${resendTimerSeconds}s", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        } else {
-                                            Text("🔄 Resend OTP", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                        }
-                                    }
-                                }
-                            }
-                        } else {
-                            // Link to go back to password mode before OTP is requested
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.Start
-                            ) {
-                                TextButton(
-                                    onClick = {
-                                        isOtpLoginMode = false
-                                        errorMessage = null
-                                    }
-                                ) {
-                                    Text(
-                                        text = "🔑 Switch to Password Login",
-                                        fontSize = 12.5.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
                                 }
                             }
                         }
@@ -528,6 +540,8 @@ fun AuthScreen(
                     }
                 }
             }
+
+
 
             Spacer(Modifier.height(16.dp))
 

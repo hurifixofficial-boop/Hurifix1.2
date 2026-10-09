@@ -1036,7 +1036,8 @@ class FirestoreSyncManager(private val context: Context) {
                 ?: doc.getString("photoUri") 
                 ?: doc.getString("photo_url") 
                 ?: doc.getString("image_url") 
-                ?: doc.getString("avatar_url"),
+                ?: doc.getString("avatar_url")
+                ?: "",
             created_at_timestamp = createdAtTimestamp,
             createdAt = createdAt,
             last_updated = doc.getLong("last_updated") ?: System.currentTimeMillis(),

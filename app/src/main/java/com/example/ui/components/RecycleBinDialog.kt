@@ -1,8 +1,5 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-
 package com.example.ui.components
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -15,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -23,7 +21,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Info
@@ -37,15 +34,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
@@ -63,6 +56,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.ui.animation.SlideUpModalDialog
+import com.example.ui.animation.FramerAnimatedScreen
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.data.model.CustomerJobEntity
@@ -192,49 +187,75 @@ fun RecycleBinDialog(
         }
     }
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
-    ) {
-        BackHandler { onDismiss() }
-        Scaffold(
+    SlideUpModalDialog(
+        onDismissRequest = onDismiss
+    ) { dismissWithAnimation ->
+        Surface(
             modifier = Modifier.fillMaxSize(),
-            topBar = {
-                TopAppBar(
-                    title = {
-                        Column {
-                            Text("🗑️ Recycle Bin", fontWeight = FontWeight.Bold)
-                            Text("30-Day Auto Retention • Safe Restore", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = onDismiss) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                        }
-                    },
-                    actions = {
-                        if (deletedJobs.isNotEmpty() || deletedExperts.isNotEmpty()) {
-                            TextButton(
-                                onClick = { showEmptyConfirmDialog = true },
-                                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+            shape = androidx.compose.ui.graphics.RectangleShape,
+            color = MaterialTheme.colorScheme.surface
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                // Header with rich styling
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            Brush.horizontalGradient(
+                                colors = listOf(Color(0xFFDC2626), Color(0xFFEF4444), Color(0xFFF97316))
+                            )
+                        )
+                        .padding(horizontal = 16.dp, vertical = 14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.White.copy(alpha = 0.2f)),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Text("Empty Bin", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                Text("🗑️", fontSize = 20.sp)
+                            }
+
+                            Column {
+                                Text(
+                                    text = "Recycle Bin",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = "30-Day Auto Retention • Safe Restore",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color.White.copy(alpha = 0.85f)
+                                )
                             }
                         }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp)
-                    )
-                )
-            }
-        ) { paddingValues ->
-            Surface(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues),
-                color = MaterialTheme.colorScheme.background
-            ) {
-                Column(modifier = Modifier.fillMaxSize()) {
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (deletedJobs.isNotEmpty() || deletedExperts.isNotEmpty()) {
+                                TextButton(
+                                    onClick = { showEmptyConfirmDialog = true },
+                                    colors = ButtonDefaults.textButtonColors(contentColor = Color.White)
+                                ) {
+                                    Text("Empty Bin", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
+                            }
+                            IconButton(onClick = dismissWithAnimation) {
+                                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                            }
+                        }
+                    }
+                }
 
                 // 30-Day Info Banner
                 Surface(
@@ -302,7 +323,11 @@ fun RecycleBinDialog(
                 }
 
                 // Content
-                when (selectedTab) {
+                FramerAnimatedScreen(
+                    targetState = selectedTab,
+                    label = "RecycleBinTabTransition"
+                ) { currentTab ->
+                    when (currentTab) {
                     0 -> {
                         if (deletedJobs.isEmpty()) {
                             EmptyBinState(itemName = "orders")
@@ -339,7 +364,8 @@ fun RecycleBinDialog(
                                     },
                                     modifier = Modifier
                                         .align(Alignment.BottomEnd)
-                                        .padding(16.dp)
+                                        .navigationBarsPadding()
+                                        .padding(end = 24.dp, bottom = 36.dp)
                                 )
                             }
                         }
@@ -380,16 +406,17 @@ fun RecycleBinDialog(
                                     },
                                     modifier = Modifier
                                         .align(Alignment.BottomEnd)
-                                        .padding(16.dp)
+                                        .navigationBarsPadding()
+                                        .padding(end = 24.dp, bottom = 36.dp)
                                 )
                             }
                         }
                     }
                 }
+                }
             }
         }
     }
-}
 }
 
 @Composable
