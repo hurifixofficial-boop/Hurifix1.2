@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -508,62 +507,53 @@ fun AddExpertDialog(
                 )
             },
             bottomBar = {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .navigationBarsPadding()
-                        .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 32.dp)
+                Surface(
+                    tonalElevation = 4.dp,
+                    shadowElevation = 8.dp,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Surface(
-                        tonalElevation = 6.dp,
-                        shadowElevation = 8.dp,
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp),
-                        modifier = Modifier.fillMaxWidth()
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 14.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            if (!isTimeLocked) {
-                                OutlinedButton(
-                                    onClick = onDismiss,
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Text("Cancel")
-                                }
-                                val isSaveEnabled = name.isNotBlank() && 
-                                        phone.length == 10 && 
-                                        isVerifiedInline && 
-                                        rawLocation.isNotBlank() && 
-                                        latitude != 0.0 && 
-                                        longitude != 0.0 && 
-                                        locationError == null &&
-                                        !isUploadingImage
-                                Button(
-                                    onClick = {
-                                        if (isSaveEnabled) {
-                                            showSaveConfirmDialog = true
-                                        }
-                                    },
-                                    enabled = isSaveEnabled,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .testTag("save_expert_button")
-                                ) {
-                                    Text("Save Expert", fontWeight = FontWeight.Bold)
-                                }
-                            } else {
-                                Button(
-                                    onClick = onDismiss,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .testTag("close_expert_button")
-                                ) {
-                                    Text("Close (View Only)")
-                                }
+                        if (!isTimeLocked) {
+                            OutlinedButton(
+                                onClick = onDismiss,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("Cancel")
+                            }
+                            val isSaveEnabled = name.isNotBlank() && 
+                                    phone.length == 10 && 
+                                    isVerifiedInline && 
+                                    rawLocation.isNotBlank() && 
+                                    latitude != 0.0 && 
+                                    longitude != 0.0 && 
+                                    locationError == null &&
+                                    !isUploadingImage
+                            Button(
+                                onClick = {
+                                    if (isSaveEnabled) {
+                                        showSaveConfirmDialog = true
+                                    }
+                                },
+                                enabled = isSaveEnabled,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("save_expert_button")
+                            ) {
+                                Text("Save Expert", fontWeight = FontWeight.Bold)
+                            }
+                        } else {
+                            Button(
+                                onClick = onDismiss,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("close_expert_button")
+                            ) {
+                                Text("Close (View Only)")
                             }
                         }
                     }

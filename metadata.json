@@ -1,6 +1,6 @@
 {
   "name": "Hurifix",
-  "description": "Multi-User Service & Task Management Portal",
+  "description": "Hurifix - Many Problems | One Solution",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

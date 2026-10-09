@@ -529,7 +529,39 @@ fun AuthScreen(
                 }
             }
 
+            Spacer(Modifier.height(16.dp))
 
+            // Firebase Authorized Hostname Info Card
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                shape = RoundedCornerShape(10.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = "🌐 Firebase Authorized Hostname:",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "ais-dev-bba5siitak52jkwenkhlem-700440713330.asia-southeast1.run.app",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Add this domain to Firebase Console -> Authentication -> Settings -> Authorized Domains.",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
 
             Spacer(Modifier.height(16.dp))
 

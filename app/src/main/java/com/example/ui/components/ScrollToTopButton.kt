@@ -1,6 +1,7 @@
 package com.example.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -18,6 +19,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
+/**
+ * Universal Scroll-To-Top Floating Arrow Button.
+ * Appears with a smooth fade/scale animation when a list is scrolled down,
+ * and disappears when the list returns to the top.
+ */
 @Composable
 fun ScrollToTopButton(
     visible: Boolean,
@@ -26,21 +32,25 @@ fun ScrollToTopButton(
 ) {
     AnimatedVisibility(
         visible = visible,
-        modifier = modifier,
-        enter = fadeIn() + scaleIn(),
-        exit = fadeOut() + scaleOut()
+        enter = fadeIn(tween(250)) + scaleIn(tween(250)),
+        exit = fadeOut(tween(200)) + scaleOut(tween(200)),
+        modifier = modifier
     ) {
         FloatingActionButton(
             onClick = onClick,
-            modifier = Modifier.size(54.dp),
-            shape = CircleShape,
             containerColor = MaterialTheme.colorScheme.primary,
             contentColor = Color.White,
-            elevation = FloatingActionButtonDefaults.elevation(6.dp, 10.dp)
+            shape = CircleShape,
+            elevation = FloatingActionButtonDefaults.elevation(
+                defaultElevation = 6.dp,
+                pressedElevation = 10.dp
+            ),
+            modifier = Modifier.size(54.dp)
         ) {
             Icon(
                 imageVector = Icons.Default.KeyboardArrowUp,
-                contentDescription = "Scroll to top"
+                contentDescription = "Scroll to top",
+                modifier = Modifier.size(32.dp)
             )
         }
     }

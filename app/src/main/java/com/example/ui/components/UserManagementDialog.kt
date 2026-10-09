@@ -1,7 +1,6 @@
 package com.example.ui.components
 
 import android.widget.Toast
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -25,8 +24,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -39,7 +36,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Block
@@ -81,16 +77,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -215,14 +207,13 @@ fun UserManagementDialog(
 
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            decorFitsSystemWindows = false
-        )
+        properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Surface(
-            modifier = Modifier.fillMaxSize(),
-            shape = androidx.compose.ui.graphics.RectangleShape,
+            modifier = Modifier
+                .fillMaxWidth(0.96f)
+                .fillMaxHeight(0.92f),
+            shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.background,
             tonalElevation = 6.dp
         ) {
@@ -398,8 +389,7 @@ fun UserManagementDialog(
                         Box(
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
-                                .navigationBarsPadding()
-                                .padding(end = 12.dp, bottom = 72.dp)
+                                .padding(16.dp)
                         ) {
                             // When not scrolled down (at top), show "Add Team Member" button
                             androidx.compose.animation.AnimatedVisibility(
@@ -1096,7 +1086,6 @@ private fun PermissionChip(label: String, granted: Boolean, isWarning: Boolean =
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AddTeamMemberDialog(
     onDismiss: () -> Unit,
@@ -1116,138 +1105,21 @@ private fun AddTeamMemberDialog(
 
     val presetDesignations = remember { HurifixUser.DEFAULT_DESIGNATION_PRESETS }
 
-    Dialog(
+    AlertDialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
-    ) {
-        BackHandler { onDismiss() }
-        Scaffold(
-            modifier = Modifier.fillMaxSize(),
-            topBar = {
-                TopAppBar(
-                    title = {
-                        Column {
-                            Text(
-                                text = "Add New Team Member",
-                                style = MaterialTheme.typography.titleLarge.copy(fontSize = 26.sp),
-                                fontWeight = FontWeight.ExtraBold
-                            )
-                            Text(
-                                text = "Register staff credentials & assign permissions",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = onDismiss) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", modifier = Modifier.size(26.dp))
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp)
-                    )
-                )
-            },
-            bottomBar = {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .navigationBarsPadding()
-                        .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 32.dp)
-                ) {
-                    Surface(
-                        tonalElevation = 6.dp,
-                        shadowElevation = 8.dp,
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 14.dp),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Cancel button on left side
-                            OutlinedButton(
-                                onClick = onDismiss,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(52.dp),
-                                shape = RoundedCornerShape(14.dp)
-                            ) {
-                                Text("Cancel", fontSize = 16.5.sp, fontWeight = FontWeight.Bold)
-                            }
-                            // Create Account button on right side
-                            Button(
-                                onClick = {
-                                    SoundHelper.playSFX("click")
-                                    if (name.isBlank()) {
-                                        SoundHelper.playSFX("error")
-                                        error = "Please enter full name"
-                                        return@Button
-                                    }
-                                    if (phone.length < 10) {
-                                        SoundHelper.playSFX("error")
-                                        error = "Mobile number must be 10 digits"
-                                        return@Button
-                                    }
-                                    if (password.length < 4) {
-                                        SoundHelper.playSFX("error")
-                                        error = "Password must be at least 4 characters"
-                                        return@Button
-                                    }
-
-                                    val chosenTag = designationTag.trim().ifBlank { "Team Member" }
-                                    val newUser = HurifixUser(
-                                        phone = phone,
-                                        name = name.trim(),
-                                        password = password.trim(),
-                                        role = HurifixUser.ROLE_STAFF,
-                                        designation_tag = chosenTag,
-                                        is_blocked = false,
-                                        can_manage_orders = canManageOrders,
-                                        can_add_experts = canAddExperts,
-                                        can_add_customers = canAddCustomers,
-                                        can_delete_orders = canDeleteOrders,
-                                        can_export_reports = canExportReports,
-                                        view_only = viewOnly,
-                                        created_at = System.currentTimeMillis(),
-                                        last_updated = System.currentTimeMillis()
-                                    )
-                                    SoundHelper.playSFX("success")
-                                    onSave(newUser)
-                                },
-                                modifier = Modifier
-                                    .weight(1.2f)
-                                    .height(52.dp),
-                                shape = RoundedCornerShape(14.dp)
-                            ) {
-                                Text("Create Account", fontSize = 16.5.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-                }
-            }
-        ) { paddingValues ->
+        title = { Text("Add Team Member", fontWeight = FontWeight.Bold) },
+        text = {
             Column(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-                    .imePadding()
-                    .verticalScroll(rememberScrollState())
-                    .padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("Full Name *", fontSize = 16.sp, fontWeight = FontWeight.SemiBold) },
-                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 17.5.sp, fontWeight = FontWeight.Medium),
-                    leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(24.dp)) },
+                    label = { Text("Full Name *") },
+                    leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -1255,9 +1127,8 @@ private fun AddTeamMemberDialog(
                 OutlinedTextField(
                     value = phone,
                     onValueChange = { input -> phone = input.filter { it.isDigit() }.take(10) },
-                    label = { Text("Mobile Number (10 Digits) *", fontSize = 16.sp, fontWeight = FontWeight.SemiBold) },
-                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 17.5.sp, fontWeight = FontWeight.Medium),
-                    leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null, modifier = Modifier.size(24.dp)) },
+                    label = { Text("Mobile Number (10 Digits) *") },
+                    leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
@@ -1266,37 +1137,33 @@ private fun AddTeamMemberDialog(
                 OutlinedTextField(
                     value = password,
                     onValueChange = { password = it },
-                    label = { Text("Initial Login Password *", fontSize = 16.sp, fontWeight = FontWeight.SemiBold) },
-                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 17.5.sp, fontWeight = FontWeight.Medium),
-                    leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(24.dp)) },
+                    label = { Text("Initial Login Password *") },
+                    leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Divider(modifier = Modifier.padding(vertical = 4.dp))
+                Divider(modifier = Modifier.padding(vertical = 2.dp))
 
                 // Custom Designation Tag Input & Quick Select Presets
                 Text(
                     text = "Designation / Role Tag *",
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 18.sp,
-                    color = MaterialTheme.colorScheme.primary
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.bodyMedium
                 )
 
                 OutlinedTextField(
                     value = designationTag,
                     onValueChange = { designationTag = it },
-                    label = { Text("Custom Designation / Title", fontSize = 16.sp, fontWeight = FontWeight.SemiBold) },
-                    placeholder = { Text("e.g. Co-Founder, Partner, Operations Head", fontSize = 15.sp) },
-                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 17.5.sp, fontWeight = FontWeight.Medium),
+                    label = { Text("Custom Designation / Title") },
+                    placeholder = { Text("e.g. Co-Founder, Partner, Operations Head") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
 
                 Text(
                     text = "Quick Tag Suggestions:",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
@@ -1304,34 +1171,33 @@ private fun AddTeamMemberDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     presetDesignations.forEach { tag ->
                         val isSelected = designationTag.equals(tag, ignoreCase = true)
                         Surface(
                             onClick = { designationTag = tag },
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(6.dp),
                             color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                            border = BorderStroke(1.5.dp, if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant)
+                            border = BorderStroke(1.dp, if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant)
                         ) {
                             Text(
                                 text = tag,
-                                fontSize = 14.5.sp,
-                                fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold,
+                                fontSize = 11.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                                 color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
                             )
                         }
                     }
                 }
 
-                Divider(modifier = Modifier.padding(vertical = 4.dp))
+                Divider(modifier = Modifier.padding(vertical = 2.dp))
 
                 Text(
                     text = "Feature & Module Access Permissions:",
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 18.sp,
-                    color = MaterialTheme.colorScheme.primary
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.bodyMedium
                 )
 
                 PermissionSwitchRow(
@@ -1376,14 +1242,63 @@ private fun AddTeamMemberDialog(
                 )
 
                 error?.let { err ->
-                    Text(err, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                    Text(err, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
             }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    SoundHelper.playSFX("click")
+                    if (name.isBlank()) {
+                        SoundHelper.playSFX("error")
+                        error = "Kripya full name enter karein"
+                        return@Button
+                    }
+                    if (phone.length < 10) {
+                        SoundHelper.playSFX("error")
+                        error = "Mobile number 10 digits ka hona chahiye"
+                        return@Button
+                    }
+                    if (password.length < 4) {
+                        SoundHelper.playSFX("error")
+                        error = "Password kam se kam 4 characters ka hona chahiye"
+                        return@Button
+                    }
+
+                    val chosenTag = designationTag.trim().ifBlank { "Team Member" }
+                    val newUser = HurifixUser(
+                        phone = phone,
+                        name = name.trim(),
+                        password = password.trim(),
+                        role = HurifixUser.ROLE_STAFF,
+                        designation_tag = chosenTag,
+                        is_blocked = false,
+                        can_manage_orders = canManageOrders,
+                        can_add_experts = canAddExperts,
+                        can_add_customers = canAddCustomers,
+                        can_delete_orders = canDeleteOrders,
+                        can_export_reports = canExportReports,
+                        view_only = viewOnly,
+                        created_at = System.currentTimeMillis(),
+                        last_updated = System.currentTimeMillis()
+                    )
+                    SoundHelper.playSFX("success")
+                    onSave(newUser)
+                },
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text("Create Account", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            OutlinedButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
         }
-    }
+    )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun EditRoleAndPermissionsDialog(
     user: HurifixUser,
@@ -1401,96 +1316,16 @@ private fun EditRoleAndPermissionsDialog(
 
     val presetDesignations = remember { HurifixUser.DEFAULT_DESIGNATION_PRESETS }
 
-    Dialog(
+    AlertDialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
-    ) {
-        BackHandler { onDismiss() }
-        Scaffold(
-            modifier = Modifier.fillMaxSize(),
-            topBar = {
-                TopAppBar(
-                    title = {
-                        Column {
-                            Text(
-                                text = "Edit Role & Permissions",
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = "${user.name} (${user.phone})",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = onDismiss) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp)
-                    )
-                )
-            },
-            bottomBar = {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .navigationBarsPadding()
-                        .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 32.dp)
-                ) {
-                    Surface(
-                        tonalElevation = 6.dp,
-                        shadowElevation = 8.dp,
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 14.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            OutlinedButton(
-                                onClick = onDismiss,
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text("Cancel")
-                            }
-                            Button(
-                                onClick = {
-                                    val updated = user.copy(
-                                        designation_tag = designationTag.trim().ifBlank { "Team Member" },
-                                        can_manage_orders = canManageOrders,
-                                        can_add_experts = canAddExperts,
-                                        can_add_customers = canAddCustomers,
-                                        can_delete_orders = canDeleteOrders,
-                                        can_export_reports = canExportReports,
-                                        view_only = viewOnly,
-                                        is_blocked = isBlocked,
-                                        last_updated = System.currentTimeMillis()
-                                    )
-                                    onSave(updated)
-                                },
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text("Save Changes", fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-                }
-            }
-        ) { paddingValues ->
+        title = {
+            Text("Edit Role & Permissions: ${user.name}", fontWeight = FontWeight.Bold)
+        },
+        text = {
             Column(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-                    .imePadding()
-                    .verticalScroll(rememberScrollState())
-                    .padding(16.dp),
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
@@ -1604,8 +1439,34 @@ private fun EditRoleAndPermissionsDialog(
                     isDestructive = true
                 )
             }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val updated = user.copy(
+                        designation_tag = designationTag.trim().ifBlank { "Team Member" },
+                        can_manage_orders = canManageOrders,
+                        can_add_experts = canAddExperts,
+                        can_add_customers = canAddCustomers,
+                        can_delete_orders = canDeleteOrders,
+                        can_export_reports = canExportReports,
+                        view_only = viewOnly,
+                        is_blocked = isBlocked,
+                        last_updated = System.currentTimeMillis()
+                    )
+                    onSave(updated)
+                },
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text("Save Changes", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            OutlinedButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
         }
-    }
+    )
 }
 
 @Composable
@@ -1616,49 +1477,28 @@ private fun PermissionSwitchRow(
     enabled: Boolean = true,
     isDestructive: Boolean = false
 ) {
-    Surface(
-        onClick = { if (enabled) onCheckedChange(!checked) },
-        shape = RoundedCornerShape(12.dp),
-        color = if (checked) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
-                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-        border = BorderStroke(
-            1.5.dp,
-            if (checked) MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
-            else MaterialTheme.colorScheme.outlineVariant
-        ),
-        modifier = Modifier.fillMaxWidth()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled) { onCheckedChange(!checked) }
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f).padding(end = 14.dp)) {
-                Text(
-                    text = label,
-                    fontSize = 17.5.sp,
-                    fontWeight = if (checked) FontWeight.ExtraBold else FontWeight.Bold,
-                    color = if (isDestructive && checked) MaterialTheme.colorScheme.error
-                    else if (!enabled) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                    else MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = if (checked) "🟢 ON (Permission Enabled)" else "⚪ OFF (Permission Disabled)",
-                    fontSize = 13.5.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = if (checked) MaterialTheme.colorScheme.primary else Color.Gray,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
-            }
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = if (checked) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (isDestructive && checked) MaterialTheme.colorScheme.error
+            else if (!enabled) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+            else MaterialTheme.colorScheme.onSurface
+        )
 
-            Switch(
-                checked = checked,
-                onCheckedChange = onCheckedChange,
-                enabled = enabled
-            )
-        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            enabled = enabled
+        )
     }
 }
 

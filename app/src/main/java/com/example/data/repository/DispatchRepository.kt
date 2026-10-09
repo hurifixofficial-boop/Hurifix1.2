@@ -1,33 +1,593 @@
 package com.example.data.repository
 
 import android.content.Context
+import com.example.data.firebase.FirestoreSyncManager
+import com.example.data.local.AppDatabase
 import com.example.data.local.CustomerDao
 import com.example.data.local.CustomerJobDao
 import com.example.data.local.ExpertCategoryDao
 import com.example.data.local.ExpertDao
 import com.example.data.local.TechnicianDao
+import com.example.data.model.CustomerEntity
 import com.example.data.model.CustomerJobEntity
 import com.example.data.model.ExpertCategoryEntity
 import com.example.data.model.ExpertEntity
+import com.example.data.model.JobStatus
+import com.example.data.model.RankedExpert
+import com.example.data.model.TechnicianEntity
+import com.example.util.LocationHelper
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.tasks.await
 
 class DispatchRepository(
-    private val context: Context,
-    private val initialUserPhone: String = "",
-    private val fallbackExpertDao: ExpertDao,
-    private val fallbackJobDao: CustomerJobDao,
-    private val fallbackCategoryDao: ExpertCategoryDao,
-    private val fallbackTechnicianDao: TechnicianDao,
-    private val fallbackCustomerDao: CustomerDao
+    private val context: Context? = null,
+    initialUserPhone: String = "",
+    private val fallbackExpertDao: ExpertDao? = null,
+    private val fallbackJobDao: CustomerJobDao? = null,
+    private val fallbackCategoryDao: ExpertCategoryDao? = null,
+    private val fallbackTechnicianDao: TechnicianDao? = null,
+    private val fallbackCustomerDao: CustomerDao? = null
 ) {
-    val activeJobs: Flow<List<CustomerJobEntity>> = fallbackJobDao.getAllActiveJobs()
-    val recycleBinJobs: Flow<List<CustomerJobEntity>> = fallbackJobDao.getRecycleBinJobs()
-    val activeExperts: Flow<List<ExpertEntity>> = fallbackExpertDao.getAllActiveExperts()
-    val recycleBinExperts: Flow<List<ExpertEntity>> = fallbackExpertDao.getRecycleBinExperts()
-    val categories: Flow<List<ExpertCategoryEntity>> = fallbackCategoryDao.getAllCategories()
+    // Secondary constructor for direct DAO usage / unit tests
+    constructor(
+        expertDao: ExpertDao,
+        jobDao: CustomerJobDao,
+        expertCategoryDao: ExpertCategoryDao,
+        technicianDao: TechnicianDao? = null,
+        customerDao: CustomerDao? = null
+    ) : this(
+        context = null,
+        initialUserPhone = "test_user",
+        fallbackExpertDao = expertDao,
+        fallbackJobDao = jobDao,
+        fallbackCategoryDao = expertCategoryDao,
+        fallbackTechnicianDao = technicianDao,
+        fallbackCustomerDao = customerDao
+    )
 
-    suspend fun refreshAllData() {}
-    suspend fun onUserLoggedIn(phone: String) {}
-    fun onUserLoggedOut() {}
-    suspend fun ensureDefaultCategoriesForCurrentUser() {}
+    private val _currentUserPhone = MutableStateFlow(initialUserPhone.replace(Regex("[^0-9]"), ""))
+    val currentUserPhone: StateFlow<String> = _currentUserPhone.asStateFlow()
+
+    fun setCurrentUser(phone: String) {
+        _currentUserPhone.value = phone.replace(Regex("[^0-9]"), "")
+    }
+
+    private fun getDb(): AppDatabase? {
+        val ctx = context ?: return null
+        return AppDatabase.getDatabase(ctx)
+    }
+
+    private fun getExpertDao(): ExpertDao {
+        return getDb()?.expertDao() ?: fallbackExpertDao ?: throw IllegalStateException("No ExpertDao available")
+    }
+
+    private fun getJobDao(): CustomerJobDao {
+        return getDb()?.customerJobDao() ?: fallbackJobDao ?: throw IllegalStateException("No CustomerJobDao available")
+    }
+
+    private fun getCategoryDao(): ExpertCategoryDao {
+        return getDb()?.expertCategoryDao() ?: fallbackCategoryDao ?: throw IllegalStateException("No CategoryDao available")
+    }
+
+    private fun getTechnicianDao(): TechnicianDao? {
+        return getDb()?.technicianDao() ?: fallbackTechnicianDao
+    }
+
+    private fun getCustomerDao(): CustomerDao? {
+        return getDb()?.customerDao() ?: fallbackCustomerDao
+    }
+
+    // Centralized shared flows across all users (Admin & Staff)
+    val allExperts: Flow<List<ExpertEntity>> =
+        (if (context != null) AppDatabase.getDatabase(context).expertDao().getAllExperts()
+        else fallbackExpertDao?.getAllExperts() ?: flowOf(emptyList()))
+            .map { list -> list.filter { !it.isDeleted } }
+
+    val availableExperts: Flow<List<ExpertEntity>> =
+        (if (context != null) AppDatabase.getDatabase(context).expertDao().getAvailableExperts()
+        else fallbackExpertDao?.getAvailableExperts() ?: flowOf(emptyList()))
+            .map { list -> list.filter { !it.isDeleted } }
+
+    val allJobs: Flow<List<CustomerJobEntity>> =
+        (if (context != null) AppDatabase.getDatabase(context).customerJobDao().getAllJobs()
+        else fallbackJobDao?.getAllJobs() ?: flowOf(emptyList()))
+            .map { list -> list.filter { !it.isDeleted } }
+
+    val allCategories: Flow<List<ExpertCategoryEntity>> =
+        if (context != null) AppDatabase.getDatabase(context).expertCategoryDao().getAllCategories()
+        else fallbackCategoryDao?.getAllCategories() ?: flowOf(emptyList())
+
+    val deletedJobs: Flow<List<CustomerJobEntity>> =
+        if (context != null) AppDatabase.getDatabase(context).customerJobDao().getDeletedJobs()
+        else fallbackJobDao?.getDeletedJobs() ?: flowOf(emptyList())
+
+    val deletedExperts: Flow<List<ExpertEntity>> =
+        if (context != null) AppDatabase.getDatabase(context).expertDao().getDeletedExperts()
+        else fallbackExpertDao?.getDeletedExperts() ?: flowOf(emptyList())
+
+    val allTechnicians: Flow<List<TechnicianEntity>>? =
+        if (context != null) AppDatabase.getDatabase(context).technicianDao().getAllTechnicians()
+        else fallbackTechnicianDao?.getAllTechnicians()
+
+    val allCustomers: Flow<List<CustomerEntity>>? =
+        if (context != null) AppDatabase.getDatabase(context).customerDao().getAllCustomers()
+        else fallbackCustomerDao?.getAllCustomers()
+
+    fun getJobsForExpert(expertId: Long): Flow<List<CustomerJobEntity>> =
+        if (context != null) AppDatabase.getDatabase(context).customerJobDao().getJobsForExpert(expertId)
+        else fallbackJobDao?.getJobsForExpert(expertId) ?: flowOf(emptyList())
+
+    // -----------------------------------------------------------------
+    // Duplicate Order Protection (Last 4 Hours Check)
+    // -----------------------------------------------------------------
+
+    suspend fun checkDuplicateRecentOrder(customerPhone: String): Boolean {
+        if (context != null) {
+            return FirestoreSyncManager.getInstance(context).checkDuplicateRecentOrder(customerPhone)
+        }
+        val clean = customerPhone.replace(Regex("[^0-9]"), "")
+        val fourHoursAgo = System.currentTimeMillis() - (4 * 60 * 60 * 1000L)
+        return getJobDao().findRecentOrderByPhone(clean, fourHoursAgo) != null
+    }
+
+    // -----------------------------------------------------------------
+    // Real-Time Order Assignment Lock
+    // -----------------------------------------------------------------
+
+    suspend fun assignJobToExpertWithLock(
+        jobId: Long,
+        expert: ExpertEntity,
+        distanceKm: Double,
+        managedByUserId: String? = null,
+        managedByUserName: String? = null,
+        managedByDesignation: String? = null
+    ): Result<Unit> {
+        if (context != null) {
+            return FirestoreSyncManager.getInstance(context).assignExpertWithTransaction(
+                jobId = jobId,
+                expertId = expert.id,
+                expertName = expert.name,
+                expertPhone = expert.phone,
+                distanceKm = distanceKm,
+                managedByUserId = managedByUserId,
+                managedByUserName = managedByUserName,
+                managedByDesignation = managedByDesignation
+            )
+        } else {
+            getJobDao().updateJobDispatch(
+                jobId = jobId,
+                status = JobStatus.PROCESSING.name,
+                expertId = expert.id,
+                expertName = expert.name,
+                expertPhone = expert.phone,
+                distanceKm = distanceKm
+            )
+            if (!managedByUserId.isNullOrBlank() && !managedByUserName.isNullOrBlank()) {
+                getJobDao().updateJobManager(jobId, managedByUserId, managedByUserName, managedByDesignation)
+            }
+            return Result.success(Unit)
+        }
+    }
+
+    suspend fun takeoverOrder(jobId: Long, userId: String, userName: String, userDesignation: String? = null): Result<Unit> {
+        if (context != null) {
+            return FirestoreSyncManager.getInstance(context).takeoverOrder(jobId, userId, userName, userDesignation)
+        } else {
+            getJobDao().updateJobManager(jobId, userId, userName, userDesignation)
+            return Result.success(Unit)
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // Standard CRUD Operations
+    // -----------------------------------------------------------------
+
+    suspend fun moveJobToRecycleBin(jobId: Long) {
+        val now = System.currentTimeMillis()
+        getJobDao().moveToRecycleBin(jobId, now)
+        context?.let { ctx ->
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                try {
+                    val firestore = FirestoreSyncManager.getInstance(ctx).getFirestore()
+                    firestore?.collection("jobs")?.document("job_$jobId")?.update(
+                        mapOf(
+                            "isDeleted" to true,
+                            "deletedAt" to now,
+                            "last_updated" to now
+                        )
+                    )?.await()
+                } catch (_: Exception) {}
+                FirestoreSyncManager.getInstance(ctx).syncNow()
+            }
+        }
+    }
+
+    suspend fun restoreJobFromRecycleBin(jobId: Long) {
+        val now = System.currentTimeMillis()
+        getJobDao().restoreJobFromRecycleBin(jobId, now)
+        context?.let { ctx ->
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                try {
+                    val firestore = FirestoreSyncManager.getInstance(ctx).getFirestore()
+                    firestore?.collection("jobs")?.document("job_$jobId")?.update(
+                        mapOf(
+                            "isDeleted" to false,
+                            "deletedAt" to null,
+                            "last_updated" to now
+                        )
+                    )?.await()
+                } catch (_: Exception) {}
+                FirestoreSyncManager.getInstance(ctx).syncNow()
+            }
+        }
+    }
+
+    suspend fun deleteJobPermanently(jobId: Long) {
+        getJobDao().deleteJobById(jobId)
+        context?.let { ctx ->
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                try {
+                    val firestore = FirestoreSyncManager.getInstance(ctx).getFirestore()
+                    firestore?.collection("jobs")?.document("job_$jobId")?.delete()?.await()
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
+    suspend fun moveExpertToRecycleBin(expertId: Long) {
+        val now = System.currentTimeMillis()
+        getExpertDao().moveToRecycleBin(expertId, now)
+        context?.let { ctx ->
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                try {
+                    val firestore = FirestoreSyncManager.getInstance(ctx).getFirestore()
+                    firestore?.collection("experts")?.document("expert_$expertId")?.update(
+                        mapOf(
+                            "isDeleted" to true,
+                            "deletedAt" to now,
+                            "last_updated" to now
+                        )
+                    )?.await()
+                } catch (_: Exception) {}
+                FirestoreSyncManager.getInstance(ctx).syncNow()
+            }
+        }
+    }
+
+    suspend fun restoreExpertFromRecycleBin(expertId: Long) {
+        val now = System.currentTimeMillis()
+        getExpertDao().restoreExpertFromRecycleBin(expertId, now)
+        context?.let { ctx ->
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                try {
+                    val firestore = FirestoreSyncManager.getInstance(ctx).getFirestore()
+                    firestore?.collection("experts")?.document("expert_$expertId")?.update(
+                        mapOf(
+                            "isDeleted" to false,
+                            "deletedAt" to null,
+                            "last_updated" to now
+                        )
+                    )?.await()
+                } catch (_: Exception) {}
+                FirestoreSyncManager.getInstance(ctx).syncNow()
+            }
+        }
+    }
+
+    suspend fun deleteExpertPermanently(expertId: Long) {
+        getExpertDao().deleteExpertById(expertId)
+        context?.let { ctx ->
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                try {
+                    val firestore = FirestoreSyncManager.getInstance(ctx).getFirestore()
+                    firestore?.collection("experts")?.document("expert_$expertId")?.delete()?.await()
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
+    suspend fun purgeRecycleBinOlderThan30Days() {
+        val thirtyDaysAgo = System.currentTimeMillis() - (30L * 24 * 60 * 60 * 1000)
+        getJobDao().purgeJobsOlderThan(thirtyDaysAgo)
+        getExpertDao().purgeExpertsOlderThan(thirtyDaysAgo)
+    }
+
+    suspend fun clearRecycleBin() {
+        getJobDao().clearRecycleBin()
+        getExpertDao().clearRecycleBin()
+    }
+
+    suspend fun updateWelcomeMessageSent(expertId: Long, sent: Boolean) {
+        getExpertDao().updateWelcomeMessageSent(expertId, sent)
+    }
+
+    // Category operations
+    suspend fun insertCategory(name: String, isDefault: Boolean = false): Long {
+        val trimmed = name.trim()
+        if (trimmed.isBlank()) return 0L
+        val cat = ExpertCategoryEntity(
+            name = trimmed,
+            isDefault = isDefault,
+            last_updated = System.currentTimeMillis()
+        )
+        val id = getCategoryDao().insertCategory(cat)
+        context?.let { ctx ->
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                FirestoreSyncManager.getInstance(ctx).syncNow()
+            }
+        }
+        return id
+    }
+
+    suspend fun deleteCategory(category: ExpertCategoryEntity) {
+        getCategoryDao().deleteCategory(category)
+    }
+
+    suspend fun deleteCategoryByName(name: String) {
+        getCategoryDao().deleteCategoryByName(name)
+    }
+
+    // Technician operations
+    suspend fun insertTechnician(technician: TechnicianEntity): Long {
+        val id = getTechnicianDao()?.insertTechnician(technician) ?: 0L
+        getExpertDao().insertExpert(
+            ExpertEntity(
+                name = technician.name,
+                phone = technician.contact,
+                category = technician.category,
+                address = technician.address,
+                latitude = technician.latitude,
+                longitude = technician.longitude,
+                isAvailable = technician.isAvailable,
+                rating = technician.rating,
+                completedJobsCount = technician.completedJobsCount,
+                last_updated = System.currentTimeMillis()
+            )
+        )
+        return id
+    }
+
+    suspend fun updateTechnician(technician: TechnicianEntity) {
+        getTechnicianDao()?.updateTechnician(technician)
+    }
+
+    suspend fun deleteTechnician(technician: TechnicianEntity) {
+        getTechnicianDao()?.deleteTechnician(technician)
+    }
+
+    suspend fun getTechnicianById(id: Long): TechnicianEntity? = getTechnicianDao()?.getTechnicianById(id)
+
+    // Customer operations
+    suspend fun insertCustomer(customer: CustomerEntity): Long =
+        getCustomerDao()?.insertCustomer(customer) ?: 0L
+
+    suspend fun updateCustomer(customer: CustomerEntity) {
+        getCustomerDao()?.updateCustomer(customer)
+    }
+
+    suspend fun deleteCustomer(customer: CustomerEntity) {
+        getCustomerDao()?.deleteCustomer(customer)
+    }
+
+    suspend fun getCustomerById(id: Long): CustomerEntity? = getCustomerDao()?.getCustomerById(id)
+
+    // Expert operations
+    suspend fun insertExpert(expert: ExpertEntity): Long {
+        val id = getExpertDao().insertExpert(expert.copy(last_updated = System.currentTimeMillis()))
+        context?.let { ctx ->
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                FirestoreSyncManager.getInstance(ctx).syncNow()
+            }
+        }
+        return id
+    }
+
+    suspend fun updateExpert(expert: ExpertEntity) {
+        getExpertDao().updateExpert(expert.copy(last_updated = System.currentTimeMillis()))
+        context?.let { ctx ->
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                FirestoreSyncManager.getInstance(ctx).syncNow()
+            }
+        }
+    }
+
+    suspend fun deleteExpert(expert: ExpertEntity) = getExpertDao().deleteExpert(expert)
+
+    // Customer Job / Order operations
+    suspend fun insertJob(job: CustomerJobEntity): Long {
+        val updated = job.copy(last_updated = System.currentTimeMillis())
+        val id = getJobDao().insertJob(updated)
+        getCustomerDao()?.insertCustomer(
+            CustomerEntity(
+                name = job.customerName,
+                contact = job.customerPhone,
+                address = job.address,
+                latitude = job.latitude,
+                longitude = job.longitude,
+                serviceRequired = job.serviceType,
+                issueDescription = job.issueDescription,
+                last_updated = System.currentTimeMillis()
+            )
+        )
+        context?.let { ctx ->
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                FirestoreSyncManager.getInstance(ctx).syncNow()
+            }
+        }
+        return id
+    }
+
+    suspend fun updateJob(job: CustomerJobEntity) {
+        getJobDao().updateJob(job.copy(last_updated = System.currentTimeMillis()))
+        context?.let { ctx ->
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                FirestoreSyncManager.getInstance(ctx).syncNow()
+            }
+        }
+    }
+
+    suspend fun unassignExpertFromJob(jobId: Long) {
+        getJobDao().unassignExpertFromJob(jobId)
+        context?.let { ctx ->
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                FirestoreSyncManager.getInstance(ctx).syncNow()
+            }
+        }
+    }
+
+    suspend fun updateJobStatus(jobId: Long, status: JobStatus) {
+        getJobDao().updateJobStatus(jobId, status.name)
+        context?.let { ctx ->
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                FirestoreSyncManager.getInstance(ctx).syncNow()
+            }
+        }
+    }
+
+    suspend fun updateExpertNotified(jobId: Long, sent: Boolean) {
+        getJobDao().updateExpertNotified(jobId, sent)
+    }
+
+    suspend fun updateCustomerNotifiedOnAssign(jobId: Long, sent: Boolean) {
+        getJobDao().updateCustomerNotifiedOnAssign(jobId, sent)
+    }
+
+    suspend fun updateCustomerNotifiedOnCompletion(jobId: Long, sent: Boolean) {
+        getJobDao().updateCustomerNotifiedOnCompletion(jobId, sent)
+    }
+
+    suspend fun updateMessageDismissedAt(jobId: Long, time: Long?) {
+        getJobDao().updateMessageDismissedAt(jobId, time)
+    }
+
+    suspend fun completeOrCancelJobWithReview(
+        jobId: Long,
+        expertId: Long?,
+        isCompleted: Boolean,
+        rating: Float,
+        feedback: String?
+    ) {
+        val newStatus = if (isCompleted) JobStatus.COMPLETED.name else JobStatus.CANCELLED.name
+        val now = System.currentTimeMillis()
+        getJobDao().completeOrCancelJobWithReview(
+            jobId = jobId,
+            status = newStatus,
+            rating = rating,
+            feedback = feedback,
+            completedAt = now
+        )
+
+        // Update expert's review metrics in database
+        if (expertId != null && expertId > 0) {
+            val expertDao = getExpertDao()
+            val expert = expertDao.getExpertById(expertId)
+            if (expert != null) {
+                val newCount = expert.totalRatingsCount + 1
+                val newSum = expert.ratingSum + rating
+                val newAvg = (newSum / newCount)
+                val roundedRating = Math.round(newAvg * 10f) / 10f
+
+                expertDao.updateExpert(
+                    expert.copy(
+                        rating = roundedRating,
+                        ratingSum = newSum,
+                        totalRatingsCount = newCount,
+                        completedJobsCount = if (isCompleted) expert.completedJobsCount + 1 else expert.completedJobsCount,
+                        cancelledJobsCount = if (!isCompleted) expert.cancelledJobsCount + 1 else expert.cancelledJobsCount,
+                        last_updated = now
+                    )
+                )
+            }
+        }
+
+        context?.let { ctx ->
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                FirestoreSyncManager.getInstance(ctx).syncNow()
+            }
+        }
+    }
+
+    suspend fun deleteJob(job: CustomerJobEntity) = getJobDao().deleteJob(job)
+
+    suspend fun restoreDatabase(
+        jobs: List<CustomerJobEntity>,
+        experts: List<ExpertEntity>,
+        categories: List<ExpertCategoryEntity>
+    ) {
+        if (jobs.isNotEmpty()) {
+            getJobDao().insertJobs(jobs)
+        }
+        if (experts.isNotEmpty()) {
+            getExpertDao().insertExperts(experts)
+        }
+        if (categories.isNotEmpty()) {
+            val catDao = getCategoryDao()
+            categories.forEach { catDao.insertCategory(it) }
+        }
+        context?.let { ctx ->
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                FirestoreSyncManager.getInstance(ctx).syncNow()
+            }
+        }
+    }
+
+    suspend fun findNearestExperts(
+        customerLat: Double,
+        customerLng: Double,
+        requiredService: String? = null,
+        onlyAvailable: Boolean = false
+    ): List<RankedExpert> {
+        val experts = if (onlyAvailable) {
+            availableExperts.first()
+        } else {
+            allExperts.first()
+        }
+
+        return experts
+            .filter { expert ->
+                if (requiredService.isNullOrBlank() || requiredService == "All") {
+                    true
+                } else {
+                    expert.category.contains(requiredService, ignoreCase = true) ||
+                            expert.category.contains("All-Rounder", ignoreCase = true) ||
+                            requiredService.contains(expert.category, ignoreCase = true)
+                }
+            }
+            .map { expert ->
+                val distance = LocationHelper.calculateDistanceKm(
+                    lat1 = customerLat,
+                    lon1 = customerLng,
+                    lat2 = expert.latitude,
+                    lon2 = expert.longitude
+                )
+                val travelMinutes = LocationHelper.estimateTravelTimeMinutes(distance)
+                RankedExpert(
+                    expert = expert,
+                    distanceKm = distance,
+                    travelTimeMinutes = travelMinutes
+                )
+            }
+            .sortedBy { it.distanceKm }
+    }
+
+    suspend fun ensureDefaultCategoriesForCurrentUser() {
+        val catDao = getCategoryDao()
+        if (catDao.getCategoryCount() == 0) {
+            catDao.insertCategory(ExpertCategoryEntity(name = "Electrician", isDefault = true))
+            catDao.insertCategory(ExpertCategoryEntity(name = "Plumber", isDefault = true))
+        }
+    }
+
+    suspend fun seedSampleExpertsIfEmpty() {
+        ensureDefaultCategoriesForCurrentUser()
+    }
 }

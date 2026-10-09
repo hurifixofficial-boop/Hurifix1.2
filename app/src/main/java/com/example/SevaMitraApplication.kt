@@ -3,7 +3,6 @@ package com.example
 import android.app.Application
 import androidx.work.Configuration
 import com.example.data.firebase.FirestoreSyncManager
-import com.example.data.local.AppDatabase
 import com.example.data.repository.DispatchRepository
 import com.example.util.SessionManager
 import com.example.util.SyncWorker
@@ -16,16 +15,7 @@ class SevaMitraApplication : Application(), Configuration.Provider {
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     val repository: DispatchRepository by lazy {
-        val db = AppDatabase.getDatabase(this)
-        DispatchRepository(
-            context = this,
-            initialUserPhone = "",
-            fallbackExpertDao = db.expertDao(),
-            fallbackJobDao = db.customerJobDao(),
-            fallbackCategoryDao = db.expertCategoryDao(),
-            fallbackTechnicianDao = db.technicianDao(),
-            fallbackCustomerDao = db.customerDao()
-        )
+        DispatchRepository(context = this)
     }
 
     override val workManagerConfiguration: Configuration
@@ -52,6 +42,18 @@ class SevaMitraApplication : Application(), Configuration.Provider {
         // 3. Schedule WorkManager Periodic Cloud Sync (every 15 mins)
         try {
             SyncWorker.schedulePeriodicSync(this)
+        } catch (_: Throwable) {}
+
+        // 4. Initialize scheduled Google Drive Auto-Backup if enabled
+        try {
+            val sessionManager = SessionManager(this)
+            if (sessionManager.isAutoBackupEnabled()) {
+                com.example.util.AutoBackupWorker.scheduleAutoBackup(
+                    context = this,
+                    isEnabled = true,
+                    frequency = sessionManager.getAutoBackupFrequency()
+                )
+            }
         } catch (_: Throwable) {}
     }
 }

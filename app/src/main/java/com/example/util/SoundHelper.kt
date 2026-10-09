@@ -1,28 +1,43 @@
 package com.example.util
 
-import android.content.Context
-import android.media.AudioAttributes
-import android.media.SoundPool
+import android.media.AudioManager
+import android.media.ToneGenerator
+import android.util.Log
 
+/**
+ * Lightweight, safe Sound Effects (SFX) helper for Android UI interactions
+ * using Android's built-in ToneGenerator.
+ * Supports: 'click', 'success' (chime), and 'error' (alert).
+ */
 object SoundHelper {
-    private var soundPool: SoundPool? = null
-    private val soundMap = mutableMapOf<String, Int>()
+    private var toneGenerator: ToneGenerator? = null
 
-    fun init(context: Context) {
-        if (soundPool != null) return
-        val audioAttributes = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
-            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-            .build()
-        soundPool = SoundPool.Builder()
-            .setMaxStreams(5)
-            .setAudioAttributes(audioAttributes)
-            .build()
+    init {
+        try {
+            toneGenerator = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 80)
+        } catch (e: Exception) {
+            Log.e("SoundHelper", "Failed to initialize ToneGenerator: ${e.message}")
+        }
     }
 
     fun playSFX(type: String) {
-        val pool = soundPool ?: return
-        val soundId = soundMap[type] ?: return
-        pool.play(soundId, 1.0f, 1.0f, 0, 0, 1.0f)
+        try {
+            when (type.lowercase()) {
+                "click" -> {
+                    toneGenerator?.startTone(ToneGenerator.TONE_PROP_BEEP, 40)
+                }
+                "success", "chime" -> {
+                    toneGenerator?.startTone(ToneGenerator.TONE_DTMF_1, 100)
+                }
+                "error", "alert" -> {
+                    toneGenerator?.startTone(ToneGenerator.TONE_SUP_ERROR, 150)
+                }
+                else -> {
+                    toneGenerator?.startTone(ToneGenerator.TONE_PROP_BEEP, 40)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("SoundHelper", "Play SFX error: ${e.message}")
+        }
     }
 }

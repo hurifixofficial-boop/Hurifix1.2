@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -79,7 +78,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
@@ -1130,60 +1128,51 @@ fun EditCustomerOrderDialog(
                 )
             },
             bottomBar = {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .navigationBarsPadding()
-                        .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 32.dp)
+                Surface(
+                    tonalElevation = 4.dp,
+                    shadowElevation = 8.dp,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Surface(
-                        tonalElevation = 6.dp,
-                        shadowElevation = 8.dp,
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp),
-                        modifier = Modifier.fillMaxWidth()
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 14.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            if (!isLockedForStaff) {
-                                OutlinedButton(
-                                    onClick = onDismiss,
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Text("Cancel")
-                                }
-                                Button(
-                                    onClick = {
-                                        val coords = parsedCoords ?: Pair(job.latitude, job.longitude)
-                                        val updated = job.copy(
-                                            customerName = name.trim(),
-                                            customerPhone = cleanPhone,
-                                            serviceType = serviceType.trim(),
-                                            address = address.trim(),
-                                            latitude = coords.first,
-                                            longitude = coords.second,
-                                            issueDescription = issueDescription.trim(),
-                                            status = if (isAdmin) selectedStatus else job.status
-                                        )
-                                        onSave(updated)
-                                        onDismiss()
-                                    },
-                                    enabled = name.isNotBlank() && isPhoneValid && serviceType.isNotBlank() && parsedCoords != null,
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Text("Save Changes", fontWeight = FontWeight.Bold)
-                                }
-                            } else {
-                                Button(
-                                    onClick = onDismiss,
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text("Close (View Only)")
-                                }
+                        if (!isLockedForStaff) {
+                            OutlinedButton(
+                                onClick = onDismiss,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("Cancel")
+                            }
+                            Button(
+                                onClick = {
+                                    val coords = parsedCoords ?: Pair(job.latitude, job.longitude)
+                                    val updated = job.copy(
+                                        customerName = name.trim(),
+                                        customerPhone = cleanPhone,
+                                        serviceType = serviceType.trim(),
+                                        address = address.trim(),
+                                        latitude = coords.first,
+                                        longitude = coords.second,
+                                        issueDescription = issueDescription.trim(),
+                                        status = if (isAdmin) selectedStatus else job.status
+                                    )
+                                    onSave(updated)
+                                    onDismiss()
+                                },
+                                enabled = name.isNotBlank() && isPhoneValid && serviceType.isNotBlank() && parsedCoords != null,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("Save Changes", fontWeight = FontWeight.Bold)
+                            }
+                        } else {
+                            Button(
+                                onClick = onDismiss,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Close (View Only)")
                             }
                         }
                     }
@@ -1525,44 +1514,35 @@ fun EditUserProfileDialog(
                 )
             },
             bottomBar = {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .navigationBarsPadding()
-                        .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 32.dp)
+                Surface(
+                    tonalElevation = 4.dp,
+                    shadowElevation = 8.dp,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Surface(
-                        tonalElevation = 6.dp,
-                        shadowElevation = 8.dp,
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp),
-                        modifier = Modifier.fillMaxWidth()
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 14.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        OutlinedButton(
+                            onClick = onDismiss,
+                            modifier = Modifier.weight(1f)
                         ) {
-                            OutlinedButton(
-                                onClick = onDismiss,
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text("Cancel")
-                            }
-                            Button(
-                                onClick = {
-                                    if (newPassword.isNotBlank()) {
-                                        onUpdatePassword?.invoke(newPassword.trim())
-                                    }
-                                    onSave(userName.trim(), cleanPhone, userRole.trim(), photoUri)
-                                    onDismiss()
-                                },
-                                enabled = userName.isNotBlank() && isPhoneValid,
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text("Save Profile", fontWeight = FontWeight.Bold)
-                            }
+                            Text("Cancel")
+                        }
+                        Button(
+                            onClick = {
+                                if (newPassword.isNotBlank()) {
+                                    onUpdatePassword?.invoke(newPassword.trim())
+                                }
+                                onSave(userName.trim(), cleanPhone, userRole.trim(), photoUri)
+                                onDismiss()
+                            },
+                            enabled = userName.isNotBlank() && isPhoneValid,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Save Profile", fontWeight = FontWeight.Bold)
                         }
                     }
                 }

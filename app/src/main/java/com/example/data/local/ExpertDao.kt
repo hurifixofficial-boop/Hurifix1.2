@@ -1,6 +1,7 @@
 package com.example.data.local
 
 import androidx.room.Dao
+import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
@@ -10,24 +11,60 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ExpertDao {
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertExpert(expert: ExpertEntity): Long
-
-    @Update
-    suspend fun updateExpert(expert: ExpertEntity)
-
     @Query("SELECT * FROM experts WHERE isDeleted = 0 ORDER BY name ASC")
-    fun getAllActiveExperts(): Flow<List<ExpertEntity>>
+    fun getAllExperts(): Flow<List<ExpertEntity>>
+
+    @Query("SELECT * FROM experts WHERE isAvailable = 1 AND isDeleted = 0 ORDER BY name ASC")
+    fun getAvailableExperts(): Flow<List<ExpertEntity>>
 
     @Query("SELECT * FROM experts WHERE isDeleted = 1 ORDER BY deletedAt DESC")
-    fun getRecycleBinExperts(): Flow<List<ExpertEntity>>
+    fun getDeletedExperts(): Flow<List<ExpertEntity>>
+
+    @Query("UPDATE experts SET isDeleted = 1, deletedAt = :deletedAt, last_updated = :deletedAt, is_synced = 0 WHERE id = :id")
+    suspend fun moveToRecycleBin(id: Long, deletedAt: Long = System.currentTimeMillis())
+
+    @Query("UPDATE experts SET isDeleted = 0, deletedAt = NULL, last_updated = :restoredAt, is_synced = 0 WHERE id = :id")
+    suspend fun restoreExpertFromRecycleBin(id: Long, restoredAt: Long = System.currentTimeMillis())
+
+    @Query("DELETE FROM experts WHERE isDeleted = 1 AND deletedAt <= :cutoffTimestamp")
+    suspend fun purgeExpertsOlderThan(cutoffTimestamp: Long)
+
+    @Query("DELETE FROM experts WHERE isDeleted = 1")
+    suspend fun clearRecycleBin()
+
+    @Query("UPDATE experts SET isWelcomeMessageSent = :sent WHERE id = :expertId")
+    suspend fun updateWelcomeMessageSent(expertId: Long, sent: Boolean)
 
     @Query("SELECT * FROM experts WHERE id = :id")
     suspend fun getExpertById(id: Long): ExpertEntity?
 
-    @Query("DELETE FROM experts WHERE id = :id")
-    suspend fun deletePermanently(id: Long)
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertExpert(expert: ExpertEntity): Long
 
-    @Query("DELETE FROM experts WHERE isDeleted = 1")
-    suspend fun clearRecycleBin()
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertExperts(experts: List<ExpertEntity>)
+
+    @Update
+    suspend fun updateExpert(expert: ExpertEntity)
+
+    @Delete
+    suspend fun deleteExpert(expert: ExpertEntity)
+
+    @Query("DELETE FROM experts WHERE id = :id")
+    suspend fun deleteExpertById(id: Long)
+
+    @Query("SELECT COUNT(*) FROM experts")
+    suspend fun getExpertCount(): Int
+
+    @Query("DELETE FROM experts")
+    suspend fun clearAllExperts()
+
+    @Query("SELECT * FROM experts WHERE is_synced = 0")
+    suspend fun getUnsyncedExperts(): List<ExpertEntity>
+
+    @Query("UPDATE experts SET is_synced = 1 WHERE id = :id")
+    suspend fun markExpertSynced(id: Long)
+
+    @Query("SELECT * FROM experts")
+    suspend fun getAllExpertsDirectList(): List<ExpertEntity>
 }

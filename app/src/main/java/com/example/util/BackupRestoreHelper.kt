@@ -2,7 +2,7 @@ package com.example.util
 
 import android.content.Context
 import android.content.Intent
-import android.widget.Toast
+import android.net.Uri
 import androidx.core.content.FileProvider
 import com.example.data.model.CustomerJobEntity
 import com.example.data.model.ExpertCategoryEntity
@@ -16,6 +16,7 @@ import java.util.Date
 import java.util.Locale
 
 object BackupRestoreHelper {
+
     data class BackupData(
         val jobs: List<CustomerJobEntity>,
         val experts: List<ExpertEntity>,
@@ -28,69 +29,74 @@ object BackupRestoreHelper {
         categories: List<ExpertCategoryEntity>
     ): String {
         val root = JSONObject()
-        root.put("version", 1)
+        root.put("app", "Hurifix")
+        root.put("version", 4)
         root.put("timestamp", System.currentTimeMillis())
 
-        val jobsArray = JSONArray()
-        for (job in jobs) {
-            val jobObj = JSONObject()
-            jobObj.put("id", job.id)
-            jobObj.put("customerName", job.customerName)
-            jobObj.put("customerPhone", job.customerPhone)
-            jobObj.put("serviceType", job.serviceType)
-            jobObj.put("issueDescription", job.issueDescription)
-            jobObj.put("address", job.address)
-            jobObj.put("latitude", job.latitude)
-            jobObj.put("longitude", job.longitude)
-            jobObj.put("status", job.status)
-            job.assignedExpertId?.let { jobObj.put("assignedExpertId", it) }
-            job.assignedExpertName?.let { jobObj.put("assignedExpertName", it) }
-            job.assignedExpertPhone?.let { jobObj.put("assignedExpertPhone", it) }
-            job.distanceKmAtDispatch?.let { jobObj.put("distanceKmAtDispatch", it) }
-            job.ratingGiven?.let { jobObj.put("ratingGiven", it) }
-            job.reviewFeedback?.let { jobObj.put("reviewFeedback", it) }
-            jobObj.put("createdAt", job.createdAt)
-            job.completedAt?.let { jobObj.put("completedAt", it) }
-            jobObj.put("isExpertNotified", job.isExpertNotified)
-            jobObj.put("isCustomerNotifiedOnAssign", job.isCustomerNotifiedOnAssign)
-            jobObj.put("isCustomerNotifiedOnCompletion", job.isCustomerNotifiedOnCompletion)
-            job.assignMessageLaterDismissedAt?.let { jobObj.put("assignMessageLaterDismissedAt", it) }
-            jobsArray.put(jobObj)
+        // Categories Array
+        val categoriesArray = JSONArray()
+        categories.forEach { cat ->
+            val obj = JSONObject()
+            obj.put("id", cat.id)
+            obj.put("name", cat.name)
+            obj.put("isDefault", cat.isDefault)
+            obj.put("createdAt", cat.createdAt)
+            categoriesArray.put(obj)
         }
-        root.put("jobs", jobsArray)
+        root.put("categories", categoriesArray)
 
+        // Experts Array
         val expertsArray = JSONArray()
-        for (expert in experts) {
-            val expObj = JSONObject()
-            expObj.put("id", expert.id)
-            expObj.put("name", expert.name)
-            expObj.put("phone", expert.phone)
-            expObj.put("category", expert.category)
-            expObj.put("address", expert.address)
-            expObj.put("latitude", expert.latitude)
-            expObj.put("longitude", expert.longitude)
-            expObj.put("isAvailable", expert.isAvailable)
-            expObj.put("rating", expert.rating.toDouble())
-            expObj.put("ratingSum", expert.ratingSum.toDouble())
-            expObj.put("totalRatingsCount", expert.totalRatingsCount)
-            expObj.put("completedJobsCount", expert.completedJobsCount)
-            expObj.put("cancelledJobsCount", expert.cancelledJobsCount)
-            expObj.put("isWelcomeMessageSent", expert.isWelcomeMessageSent)
-            expObj.put("createdAt", expert.createdAt)
-            expertsArray.put(expObj)
+        experts.forEach { exp ->
+            val obj = JSONObject()
+            obj.put("id", exp.id)
+            obj.put("name", exp.name)
+            obj.put("phone", exp.phone)
+            obj.put("category", exp.category)
+            obj.put("address", exp.address)
+            obj.put("latitude", exp.latitude)
+            obj.put("longitude", exp.longitude)
+            obj.put("isAvailable", exp.isAvailable)
+            obj.put("rating", exp.rating.toDouble())
+            obj.put("ratingSum", exp.ratingSum.toDouble())
+            obj.put("totalRatingsCount", exp.totalRatingsCount)
+            obj.put("completedJobsCount", exp.completedJobsCount)
+            obj.put("cancelledJobsCount", exp.cancelledJobsCount)
+            obj.put("createdAt", exp.createdAt)
+            obj.put("last_updated", exp.last_updated)
+            expertsArray.put(obj)
         }
         root.put("experts", expertsArray)
 
-        val categoriesArray = JSONArray()
-        for (cat in categories) {
-            val catObj = JSONObject()
-            catObj.put("id", cat.id)
-            catObj.put("name", cat.name)
-            catObj.put("isDefault", cat.isDefault)
-            catObj.put("createdAt", cat.createdAt)
-            categoriesArray.put(catObj)
+        // Jobs Array
+        val jobsArray = JSONArray()
+        jobs.forEach { job ->
+            val obj = JSONObject()
+            obj.put("id", job.id)
+            obj.put("customerName", job.customerName)
+            obj.put("customerPhone", job.customerPhone)
+            obj.put("serviceType", job.serviceType)
+            obj.put("issueDescription", job.issueDescription)
+            obj.put("address", job.address)
+            obj.put("latitude", job.latitude)
+            obj.put("longitude", job.longitude)
+            obj.put("status", job.status)
+            obj.put("assignedExpertId", job.assignedExpertId ?: JSONObject.NULL)
+            obj.put("assignedExpertName", job.assignedExpertName ?: JSONObject.NULL)
+            obj.put("assignedExpertPhone", job.assignedExpertPhone ?: JSONObject.NULL)
+            obj.put("distanceKmAtDispatch", job.distanceKmAtDispatch ?: JSONObject.NULL)
+            obj.put("ratingGiven", job.ratingGiven?.toDouble() ?: JSONObject.NULL)
+            obj.put("reviewFeedback", job.reviewFeedback ?: JSONObject.NULL)
+            obj.put("createdAt", job.createdAt)
+            obj.put("last_updated", job.last_updated)
+            obj.put("completedAt", job.completedAt ?: JSONObject.NULL)
+            obj.put("isExpertNotified", job.isExpertNotified)
+            obj.put("isCustomerNotifiedOnAssign", job.isCustomerNotifiedOnAssign)
+            obj.put("isCustomerNotifiedOnCompletion", job.isCustomerNotifiedOnCompletion)
+            obj.put("assignMessageLaterDismissedAt", job.assignMessageLaterDismissedAt ?: JSONObject.NULL)
+            jobsArray.put(obj)
         }
-        root.put("categories", categoriesArray)
+        root.put("jobs", jobsArray)
 
         return root.toString(2)
     }
@@ -101,26 +107,42 @@ object BackupRestoreHelper {
         experts: List<ExpertEntity>,
         categories: List<ExpertCategoryEntity>
     ) {
-        try {
-            val json = createBackupJson(jobs, experts, categories)
-            val dateStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-            val filename = "hurifix_backup_$dateStr.json"
-            val backupFile = File(context.cacheDir, filename)
-            backupFile.writeText(json)
-
-            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", backupFile)
-            val intent = Intent(Intent.ACTION_SEND).apply {
-                type = "application/json"
-                putExtra(Intent.EXTRA_STREAM, uri)
-                putExtra(Intent.EXTRA_SUBJECT, "Hurifix Database Backup - $dateStr")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            context.startActivity(Intent.createChooser(intent, "Export Backup").apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            })
-        } catch (e: Exception) {
-            Toast.makeText(context, "Export error: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+        val sessionManager = SessionManager(context)
+        if (!sessionManager.isAdmin()) {
+            android.widget.Toast.makeText(
+                context,
+                "🔒 Access Denied: Backup & Database export is strictly restricted to Master Administrators.",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+            return
         }
+
+        val jsonString = createBackupJson(jobs, experts, categories)
+        val timeStamp = SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault()).format(Date())
+        val fileName = "Hurifix_DriveBackup_$timeStamp.json"
+
+        val backupDir = File(context.cacheDir, "backups").apply { mkdirs() }
+        val backupFile = File(backupDir, fileName)
+        backupFile.writeText(jsonString)
+
+        val uri: Uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            backupFile
+        )
+
+        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "application/json"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_SUBJECT, "Hurifix Full Database Backup - $timeStamp")
+            putExtra(Intent.EXTRA_TEXT, "Hurifix complete system backup file. You can upload this directly to Google Drive to save your data.")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+
+        val chooser = Intent.createChooser(shareIntent, "Backup to Google Drive / Files").apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(chooser)
     }
 
     fun parseBackupJson(inputStream: InputStream): BackupData {
@@ -163,7 +185,6 @@ object BackupRestoreHelper {
                         totalRatingsCount = obj.optInt("totalRatingsCount", 1),
                         completedJobsCount = obj.optInt("completedJobsCount", 0),
                         cancelledJobsCount = obj.optInt("cancelledJobsCount", 0),
-                        isWelcomeMessageSent = obj.optBoolean("isWelcomeMessageSent", false),
                         createdAt = obj.optLong("createdAt", System.currentTimeMillis())
                     )
                 )
@@ -203,6 +224,10 @@ object BackupRestoreHelper {
             }
         }
 
-        return BackupData(jobsList, expertsList, categoriesList)
+        return BackupData(
+            jobs = jobsList,
+            experts = expertsList,
+            categories = categoriesList
+        )
     }
 }

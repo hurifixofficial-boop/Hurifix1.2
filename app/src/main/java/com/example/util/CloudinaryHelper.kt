@@ -3,7 +3,11 @@ package com.example.util
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
 import android.net.Uri
+import android.os.Build
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -16,7 +20,15 @@ import java.io.ByteArrayOutputStream
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
+/**
+ * Cloudinary image uploader and WebP auto-compression utility.
+ * Credentials:
+ * - Cloud Name: qgfxr96m
+ * - API Key: 397241468624234
+ * - API Secret: tiC43p-Ai0HWnWxnymBNVAtBe8Q
+ */
 object CloudinaryHelper {
+    private const val TAG = "CloudinaryHelper"
     private const val CLOUD_NAME = "qgfxr96m"
     private const val API_KEY = "397241468624234"
     private const val API_SECRET = "tiC43p-Ai0HWnWxnymBNVAtBe8Q"
@@ -30,41 +42,111 @@ object CloudinaryHelper {
             .build()
     }
 
+    /**
+     * Compresses an image picked from [uri] into WebP format with a max dimension of 500px.
+     */
     fun compressUriToWebp(context: Context, uri: Uri, maxDimension: Int = 500): ByteArray? {
         return try {
-            val inputStream = context.contentResolver.openInputStream(uri) ?: return null
-            val bitmap = BitmapFactory.decodeStream(inputStream)
-            inputStream.close()
-            val scaled = if (bitmap.width > maxDimension || bitmap.height > maxDimension) {
-                val ratio = bitmap.width.toFloat() / bitmap.height.toFloat()
-                val targetW = if (ratio >= 1) maxDimension else (maxDimension * ratio).toInt()
-                val targetH = if (ratio >= 1) (maxDimension / ratio).toInt() else maxDimension
-                Bitmap.createScaledBitmap(bitmap, targetW, targetH, true)
-            } else bitmap
+            // 1. Decode original bitmap bounds
+            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            context.contentResolver.openInputStream(uri)?.use { stream ->
+                BitmapFactory.decodeStream(stream, null, options)
+            }
 
-            val out = ByteArrayOutputStream()
-            scaled.compress(Bitmap.CompressFormat.JPEG, 80, out)
-            out.toByteArray()
-        } catch (_: Exception) {
+            var inSampleSize = 1
+            if (options.outHeight > maxDimension || options.outWidth > maxDimension) {
+                val halfHeight = options.outHeight / 2
+                val halfWidth = options.outWidth / 2
+                while ((halfHeight / inSampleSize) >= maxDimension && (halfWidth / inSampleSize) >= maxDimension) {
+                    inSampleSize *= 2
+                }
+            }
+
+            // 2. Decode actual bitmap with sample size
+            val decodeOptions = BitmapFactory.Options().apply { this.inSampleSize = inSampleSize }
+            val rawBitmap = context.contentResolver.openInputStream(uri)?.use { stream ->
+                BitmapFactory.decodeStream(stream, null, decodeOptions)
+            } ?: return null
+
+            // 3. Inspect orientation from EXIF
+            var rotationAngle = 0f
+            try {
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    val exif = ExifInterface(stream)
+                    val orientation = exif.getAttributeInt(
+                        ExifInterface.TAG_ORIENTATION,
+                        ExifInterface.ORIENTATION_NORMAL
+                    )
+                    rotationAngle = when (orientation) {
+                        ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+                        ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+                        ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+                        else -> 0f
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "EXIF read error: ${e.message}")
+            }
+
+            val orientedBitmap = if (rotationAngle != 0f) {
+                val matrix = Matrix().apply { postRotate(rotationAngle) }
+                Bitmap.createBitmap(rawBitmap, 0, 0, rawBitmap.width, rawBitmap.height, matrix, true)
+            } else {
+                rawBitmap
+            }
+
+            // 4. Scale to max width/height of 500px
+            val width = orientedBitmap.width
+            val height = orientedBitmap.height
+            val scale = if (width > maxDimension || height > maxDimension) {
+                maxDimension.toFloat() / maxOf(width, height)
+            } else {
+                1.0f
+            }
+
+            val targetWidth = (width * scale).toInt().coerceAtLeast(1)
+            val targetHeight = (height * scale).toInt().coerceAtLeast(1)
+            val scaledBitmap = if (scale < 1.0f) {
+                Bitmap.createScaledBitmap(orientedBitmap, targetWidth, targetHeight, true)
+            } else {
+                orientedBitmap
+            }
+
+            // 5. Compress to WebP format
+            val baos = ByteArrayOutputStream()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                scaledBitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, 80, baos)
+            } else {
+                @Suppress("DEPRECATION")
+                scaledBitmap.compress(Bitmap.CompressFormat.WEBP, 80, baos)
+            }
+            baos.toByteArray()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to compress image to WebP: ${e.message}", e)
             null
         }
     }
 
+    /**
+     * Uploads the given WebP byte array to Cloudinary using signed authentication.
+     * Returns the HTTPS secure URL on success.
+     */
     suspend fun uploadImage(webpBytes: ByteArray): Result<String> = withContext(Dispatchers.IO) {
         try {
             val timestamp = (System.currentTimeMillis() / 1000).toString()
-            val signature = sha1Hex("timestamp=$timestamp$API_SECRET")
+            val toSign = "timestamp=$timestamp$API_SECRET"
+            val signature = sha1Hex(toSign)
 
             val requestBody = MultipartBody.Builder()
                 .setType(MultipartBody.FORM)
+                .addFormDataPart(
+                    "file",
+                    "profile_${System.currentTimeMillis()}.webp",
+                    webpBytes.toRequestBody("image/webp".toMediaTypeOrNull())
+                )
                 .addFormDataPart("api_key", API_KEY)
                 .addFormDataPart("timestamp", timestamp)
                 .addFormDataPart("signature", signature)
-                .addFormDataPart(
-                    "file",
-                    "image.jpg",
-                    webpBytes.toRequestBody("image/jpeg".toMediaTypeOrNull())
-                )
                 .build()
 
             val request = Request.Builder()
@@ -73,27 +155,45 @@ object CloudinaryHelper {
                 .build()
 
             val response = client.newCall(request).execute()
-            val body = response.body?.string() ?: ""
-            if (response.isSuccessful) {
-                val json = JSONObject(body)
-                val secureUrl = json.getString("secure_url")
-                Result.success(secureUrl)
-            } else {
-                Result.failure(Exception("Cloudinary error: $body"))
+            response.use { resp ->
+                val bodyString = resp.body?.string() ?: ""
+                if (resp.isSuccessful) {
+                    val json = JSONObject(bodyString)
+                    val secureUrl = json.optString("secure_url").ifBlank {
+                        json.optString("url")
+                    }
+                    if (secureUrl.isNotBlank()) {
+                        Log.i(TAG, "Uploaded to Cloudinary successfully: $secureUrl")
+                        Result.success(secureUrl)
+                    } else {
+                        Result.failure(Exception("Cloudinary response missing secure_url"))
+                    }
+                } else {
+                    Log.e(TAG, "Cloudinary upload error (${resp.code}): $bodyString")
+                    Result.failure(Exception("Cloudinary HTTP ${resp.code}: $bodyString"))
+                }
             }
         } catch (e: Exception) {
+            Log.e(TAG, "Exception during Cloudinary upload: ${e.message}", e)
             Result.failure(e)
         }
     }
 
-    suspend fun compressAndUpload(context: Context, uri: Uri): Result<String> {
-        val bytes = compressUriToWebp(context, uri) ?: return Result.failure(Exception("Failed to read image"))
-        return uploadImage(bytes)
+    /**
+     * High-level helper: takes a picked Uri, auto-compresses it to WebP (max 500px),
+     * uploads it to Cloudinary, and returns the resulting secure URL.
+     */
+    suspend fun compressAndUpload(context: Context, uri: Uri): Result<String> = GlobalLoadingManager.withLoading("Loading...") {
+        withContext(Dispatchers.IO) {
+            val webpBytes = compressUriToWebp(context, uri, maxDimension = 500)
+                ?: return@withContext Result.failure(Exception("Failed to decode and compress image to WebP"))
+            uploadImage(webpBytes)
+        }
     }
 
     private fun sha1Hex(input: String): String {
         val md = MessageDigest.getInstance("SHA-1")
-        val digest = md.digest(input.toByteArray())
-        return digest.joinToString("") { "%02x".format(it) }
+        val bytes = md.digest(input.toByteArray(Charsets.UTF_8))
+        return bytes.joinToString("") { "%02x".format(it) }
     }
 }

@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -187,15 +186,15 @@ fun RecycleBinDialog(
 
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            decorFitsSystemWindows = false
-        )
+        properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Surface(
-            modifier = Modifier.fillMaxSize(),
-            shape = androidx.compose.ui.graphics.RectangleShape,
-            color = MaterialTheme.colorScheme.surface
+            modifier = Modifier
+                .fillMaxWidth(0.96f)
+                .fillMaxHeight(0.92f),
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.outlineVariant)
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 // Header with rich styling
@@ -362,8 +361,7 @@ fun RecycleBinDialog(
                                     },
                                     modifier = Modifier
                                         .align(Alignment.BottomEnd)
-                                        .navigationBarsPadding()
-                                        .padding(end = 24.dp, bottom = 36.dp)
+                                        .padding(16.dp)
                                 )
                             }
                         }
@@ -404,8 +402,7 @@ fun RecycleBinDialog(
                                     },
                                     modifier = Modifier
                                         .align(Alignment.BottomEnd)
-                                        .navigationBarsPadding()
-                                        .padding(end = 24.dp, bottom = 36.dp)
+                                        .padding(16.dp)
                                 )
                             }
                         }

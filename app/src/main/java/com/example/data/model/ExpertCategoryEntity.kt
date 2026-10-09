@@ -7,7 +7,7 @@ import androidx.room.PrimaryKey
 data class ExpertCategoryEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
-    val name: String = "",
+    val name: String,
     val isDefault: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),
     val last_updated: Long = System.currentTimeMillis(),
