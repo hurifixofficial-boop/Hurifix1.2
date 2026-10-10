@@ -1,12 +1,9 @@
 package com.example.ui.components
 
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -15,34 +12,23 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
-/**
- * Universal Hurifix Confirmation Dialog triggered before any critical action
- * across Admin, Experts, and Customer/Orders flows.
- */
 @Composable
 fun HurifixConfirmDialog(
     title: String,
     message: String,
     confirmText: String = "Confirm",
     dismissText: String = "Cancel",
-    icon: ImageVector = Icons.Default.Warning,
     isDestructive: Boolean = false,
+    icon: ImageVector? = null,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        icon = {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = if (isDestructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-            )
-        },
         title = {
             Text(
                 text = title,
-                style = MaterialTheme.typography.titleLarge,
+                style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
         },
@@ -59,14 +45,14 @@ fun HurifixConfirmDialog(
                     onConfirm()
                     onDismiss()
                 },
+                shape = RoundedCornerShape(8.dp),
                 colors = if (isDestructive) {
                     ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 } else {
                     ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                },
-                shape = RoundedCornerShape(8.dp)
+                }
             ) {
-                Text(confirmText, fontWeight = FontWeight.Bold)
+                Text(text = confirmText, fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
@@ -74,9 +60,8 @@ fun HurifixConfirmDialog(
                 onClick = onDismiss,
                 shape = RoundedCornerShape(8.dp)
             ) {
-                Text(dismissText)
+                Text(text = dismissText)
             }
-        },
-        shape = RoundedCornerShape(16.dp)
+        }
     )
 }

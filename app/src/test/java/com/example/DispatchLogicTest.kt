@@ -36,11 +36,56 @@ class DispatchLogicTest {
         assertEquals(28.5708, coords!!.first, 0.0001)
         assertEquals(77.3261, coords.second, 0.0001)
 
+        val urlEncoded = "https://maps.google.com/?q=28.5708%2C77.3261"
+        val coordsEncoded = LocationHelper.parseCoordinatesFromText(urlEncoded)
+        assertNotNull(coordsEncoded)
+        assertEquals(28.5708, coordsEncoded!!.first, 0.0001)
+        assertEquals(77.3261, coordsEncoded.second, 0.0001)
+
+        val urlLoc = "https://maps.google.com/?q=loc:28.5708+77.3261"
+        val coordsLoc = LocationHelper.parseCoordinatesFromText(urlLoc)
+        assertNotNull(coordsLoc)
+        assertEquals(28.5708, coordsLoc!!.first, 0.0001)
+        assertEquals(77.3261, coordsLoc.second, 0.0001)
+
+        val urlSearch = "https://www.google.com/maps/search/?api=1&query=28.5708,77.3261"
+        val coordsSearch = LocationHelper.parseCoordinatesFromText(urlSearch)
+        assertNotNull(coordsSearch)
+        assertEquals(28.5708, coordsSearch!!.first, 0.0001)
+        assertEquals(77.3261, coordsSearch.second, 0.0001)
+
+        val urlAt = "https://www.google.com/maps/@28.5708,77.3261,15z"
+        val coordsAt = LocationHelper.parseCoordinatesFromText(urlAt)
+        assertNotNull(coordsAt)
+        assertEquals(28.5708, coordsAt!!.first, 0.0001)
+        assertEquals(77.3261, coordsAt.second, 0.0001)
+
+        val urlProto = "https://www.google.com/maps/place/Shop/@28.5708,77.3261,17z/data=!3d28.5708!4d77.3261"
+        val coordsProto = LocationHelper.parseCoordinatesFromText(urlProto)
+        assertNotNull(coordsProto)
+        assertEquals(28.5708, coordsProto!!.first, 0.0001)
+        assertEquals(77.3261, coordsProto.second, 0.0001)
+
+        assertTrue(LocationHelper.isGoogleMapsUrl("https://goo.gl/maps/xyz"))
+        assertTrue(LocationHelper.isGoogleMapsUrl("https://maps.app.goo.gl/abc"))
+        assertTrue(LocationHelper.isGoogleMapsUrl("https://maps.google.com/?q=28.57,77.32"))
+
         val rawCoords = "28.6280, 77.3650"
         val parsedRaw = LocationHelper.parseCoordinatesFromText(rawCoords)
         assertNotNull(parsedRaw)
         assertEquals(28.6280, parsedRaw!!.first, 0.0001)
         assertEquals(77.3650, parsedRaw.second, 0.0001)
+    }
+
+    @Test
+    fun testSoundManagerMethods() {
+        // SoundManager should execute cleanly without throwing
+        com.example.util.SoundManager.playClick()
+        com.example.util.SoundManager.playSuccess()
+        com.example.util.SoundManager.playError()
+        com.example.util.SoundHelper.playSFX("click")
+        com.example.util.SoundHelper.playSFX("success")
+        com.example.util.SoundHelper.playSFX("error")
     }
 
     @Test

@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.example.data.firebase.FirestoreSyncManager
 import com.example.data.model.HurifixUser
+import kotlinx.coroutines.launch
 
 class SessionManager(private val context: Context) {
     private val prefs: SharedPreferences =
@@ -183,7 +184,8 @@ class SessionManager(private val context: Context) {
     }
 
     fun updateUserProfile(name: String, phone: String, designationTag: String = "Team Member", photoUri: String? = null) {
-        val cleanPhone = phone.replace(Regex("[^0-9]"), "").ifBlank { getUserPhone() }
+        val oldPhone = getUserPhone()
+        val cleanPhone = phone.replace(Regex("[^0-9]"), "").ifBlank { oldPhone }
         prefs.edit().apply {
             putString(KEY_USER_NAME, name.trim())
             putString(KEY_USER_PHONE, cleanPhone)
@@ -196,10 +198,23 @@ class SessionManager(private val context: Context) {
             }
             apply()
         }
+        val syncManager = FirestoreSyncManager.getInstance(context)
+        val role = getUserRole()
+        syncManager.scope.launch {
+            syncManager.updateUserProfile(
+                phone = cleanPhone,
+                name = name.trim(),
+                designationTag = designationTag.trim(),
+                profilePicUrl = photoUri,
+                role = role,
+                oldPhone = if (oldPhone.isNotBlank() && oldPhone != cleanPhone) oldPhone else null
+            )
+        }
     }
 
     fun updateAdminProfile(name: String, phone: String, designationTag: String = "Co-Founder & Operations", photoUri: String? = null) {
-        val cleanPhone = phone.replace(Regex("[^0-9]"), "").ifBlank { getUserPhone() }
+        val oldPhone = getUserPhone()
+        val cleanPhone = phone.replace(Regex("[^0-9]"), "").ifBlank { oldPhone }
         prefs.edit().apply {
             putString(KEY_USER_NAME, name.trim())
             putString(KEY_USER_PHONE, cleanPhone)
@@ -212,6 +227,17 @@ class SessionManager(private val context: Context) {
                 putString("user_photo_$cleanPhone", photoUri)
             }
             apply()
+        }
+        val syncManager = FirestoreSyncManager.getInstance(context)
+        syncManager.scope.launch {
+            syncManager.updateUserProfile(
+                phone = cleanPhone,
+                name = name.trim(),
+                designationTag = designationTag.trim(),
+                profilePicUrl = photoUri,
+                role = HurifixUser.ROLE_ADMIN,
+                oldPhone = if (oldPhone.isNotBlank() && oldPhone != cleanPhone) oldPhone else null
+            )
         }
     }
 

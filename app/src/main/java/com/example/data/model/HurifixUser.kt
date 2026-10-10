@@ -1,9 +1,5 @@
 package com.example.data.model
 
-/**
- * Data model for Hurifix System Users (Admins & Team Members) stored in Firestore 'users' collection.
- * Includes Role-Based Access Control (RBAC) permissions and Custom Designation Tags.
- */
 data class HurifixUser(
     val phone: String = "",
     val name: String = "",
@@ -22,47 +18,6 @@ data class HurifixUser(
     val created_at: Long = System.currentTimeMillis(),
     val last_updated: Long = System.currentTimeMillis()
 ) {
-    companion object {
-        const val ROLE_ADMIN = "ADMIN"
-        const val ROLE_STAFF = "STAFF"
-
-        const val PRIMARY_ADMIN_PHONE = "9991287646"
-        const val SECONDARY_ADMIN_PHONE = "8307817684"
-        const val MASTER_ADMIN_PASSWORD = "Donboss890"
-        const val EMERGENCY_RECOVERY_KEY = "HURIFIX-RECOVER-2026"
-
-        // Common Designation Tag presets
-        val DEFAULT_DESIGNATION_PRESETS = listOf(
-            "Co-Founder",
-            "Partner",
-            "Operations Head",
-            "Team Member",
-            "Dispatch Lead",
-            "Customer Support",
-            "Regional Manager"
-        )
-
-        fun createMasterAdmin(phone: String, name: String = "Hurifix Admin"): HurifixUser {
-            return HurifixUser(
-                phone = phone,
-                name = name,
-                password = MASTER_ADMIN_PASSWORD,
-                role = ROLE_ADMIN,
-                designation_tag = "Co-Founder & Admin",
-                is_blocked = false,
-                is_deleted = false,
-                can_manage_orders = true,
-                can_add_experts = true,
-                can_add_customers = true,
-                can_delete_orders = true,
-                can_export_reports = true,
-                view_only = false,
-                created_at = System.currentTimeMillis(),
-                last_updated = System.currentTimeMillis()
-            )
-        }
-    }
-
     val isPrimaryAdmin: Boolean
         get() = phone == PRIMARY_ADMIN_PHONE || phone == SECONDARY_ADMIN_PHONE
 
@@ -70,12 +25,9 @@ data class HurifixUser(
         get() = role.equals(ROLE_ADMIN, ignoreCase = true) || isPrimaryAdmin
 
     val displayDesignation: String
-        get() = if (designation_tag.isNotBlank()) {
-            designation_tag.trim()
-        } else if (isAdmin) {
-            "Master Admin"
-        } else {
-            "Team Member"
+        get() {
+            if (designation_tag.isNotBlank()) return designation_tag.trim()
+            return if (isAdmin) "Master Admin" else "Team Member"
         }
 
     fun toMap(): Map<String, Any?> {
@@ -97,5 +49,39 @@ data class HurifixUser(
             "created_at" to created_at,
             "last_updated" to last_updated
         )
+    }
+
+    companion object {
+        const val ROLE_ADMIN = "ADMIN"
+        const val ROLE_STAFF = "STAFF"
+        const val PRIMARY_ADMIN_PHONE = "9876543210"
+        const val SECONDARY_ADMIN_PHONE = "9999999999"
+        const val MASTER_ADMIN_PASSWORD = "AdminPassword123"
+        const val EMERGENCY_RECOVERY_KEY = "Recover##"
+
+        val DEFAULT_DESIGNATION_PRESETS = listOf(
+            "Co-Founder & Admin",
+            "Operations Manager",
+            "Dispatch Coordinator",
+            "Field Executive"
+        )
+
+        fun createMasterAdmin(phone: String, name: String = "Hurifix Admin"): HurifixUser {
+            return HurifixUser(
+                phone = phone,
+                name = name,
+                password = MASTER_ADMIN_PASSWORD,
+                role = ROLE_ADMIN,
+                designation_tag = "Co-Founder & Admin",
+                is_blocked = false,
+                can_manage_orders = true,
+                can_add_experts = true,
+                can_add_customers = true,
+                can_delete_orders = true,
+                can_export_reports = true,
+                view_only = false,
+                is_deleted = false
+            )
+        }
     }
 }

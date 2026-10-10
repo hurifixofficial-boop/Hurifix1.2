@@ -129,29 +129,53 @@ object CloudinaryHelper {
 
     /**
      * Uploads the given WebP byte array to Cloudinary using signed authentication.
+     * Uses fixed unique IDs (public_id) and overwrite mode so that old files are cleanly replaced
+     * without consuming extra cloud storage.
      * Returns the HTTPS secure URL on success.
      */
-    suspend fun uploadImage(webpBytes: ByteArray): Result<String> = withContext(Dispatchers.IO) {
+    suspend fun uploadImage(
+        webpBytes: ByteArray,
+        publicId: String? = null,
+        overwrite: Boolean = true
+    ): Result<String> = withContext(Dispatchers.IO) {
         try {
             val timestamp = (System.currentTimeMillis() / 1000).toString()
-            val toSign = "timestamp=$timestamp$API_SECRET"
+            val cleanPublicId = publicId?.replace(Regex("[^a-zA-Z0-9_-]"), "_")?.ifBlank { null }
+                ?: "profile_user"
+
+            // Cloudinary requires signed parameters to be sorted alphabetically by key:
+            // "invalidate" -> "overwrite" -> "public_id" -> "timestamp"
+            val paramsToSign = sortedMapOf<String, String>()
+            if (overwrite) {
+                paramsToSign["invalidate"] = "true"
+                paramsToSign["overwrite"] = "true"
+            }
+            paramsToSign["public_id"] = cleanPublicId
+            paramsToSign["timestamp"] = timestamp
+
+            val toSign = paramsToSign.entries.joinToString("&") { "${it.key}=${it.value}" } + API_SECRET
             val signature = sha1Hex(toSign)
 
-            val requestBody = MultipartBody.Builder()
+            val bodyBuilder = MultipartBody.Builder()
                 .setType(MultipartBody.FORM)
                 .addFormDataPart(
                     "file",
-                    "profile_${System.currentTimeMillis()}.webp",
+                    "$cleanPublicId.webp",
                     webpBytes.toRequestBody("image/webp".toMediaTypeOrNull())
                 )
                 .addFormDataPart("api_key", API_KEY)
                 .addFormDataPart("timestamp", timestamp)
                 .addFormDataPart("signature", signature)
-                .build()
+                .addFormDataPart("public_id", cleanPublicId)
+
+            if (overwrite) {
+                bodyBuilder.addFormDataPart("overwrite", "true")
+                bodyBuilder.addFormDataPart("invalidate", "true")
+            }
 
             val request = Request.Builder()
                 .url(UPLOAD_URL)
-                .post(requestBody)
+                .post(bodyBuilder.build())
                 .build()
 
             val response = client.newCall(request).execute()
@@ -163,31 +187,46 @@ object CloudinaryHelper {
                         json.optString("url")
                     }
                     if (secureUrl.isNotBlank()) {
-                        Log.i(TAG, "Uploaded to Cloudinary successfully: $secureUrl")
+                        Log.i(TAG, "Uploaded to Cloudinary (public_id=$cleanPublicId, overwrite=$overwrite): $secureUrl")
                         Result.success(secureUrl)
                     } else {
                         Result.failure(Exception("Cloudinary response missing secure_url"))
                     }
                 } else {
                     Log.e(TAG, "Cloudinary upload error (${resp.code}): $bodyString")
-                    Result.failure(Exception("Cloudinary HTTP ${resp.code}: $bodyString"))
+                    Result.failure(Exception("Cloudinary upload failed"))
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Exception during Cloudinary upload: ${e.message}", e)
-            Result.failure(e)
+            val friendlyMsg = NetworkErrorHandler.getFriendlyErrorMessage(e)
+            Result.failure(Exception(friendlyMsg))
         }
     }
 
     /**
      * High-level helper: takes a picked Uri, auto-compresses it to WebP (max 500px),
-     * uploads it to Cloudinary, and returns the resulting secure URL.
+     * uploads it to Cloudinary using fixed unique public_id and overwrite mode,
+     * and returns the resulting secure URL.
      */
-    suspend fun compressAndUpload(context: Context, uri: Uri): Result<String> = GlobalLoadingManager.withLoading("Loading...") {
+    suspend fun compressAndUpload(
+        context: Context,
+        uri: Uri,
+        fixedPublicId: String? = null,
+        overwrite: Boolean = true
+    ): Result<String> = GlobalLoadingManager.withLoading("Loading...") {
         withContext(Dispatchers.IO) {
             val webpBytes = compressUriToWebp(context, uri, maxDimension = 500)
                 ?: return@withContext Result.failure(Exception("Failed to decode and compress image to WebP"))
-            uploadImage(webpBytes)
+
+            val resolvedPublicId = if (!fixedPublicId.isNullOrBlank()) {
+                fixedPublicId
+            } else {
+                val phone = SessionManager(context).getUserPhone().replace(Regex("[^0-9]"), "")
+                if (phone.isNotBlank()) "profile_$phone" else "profile_default"
+            }
+
+            uploadImage(webpBytes, publicId = resolvedPublicId, overwrite = overwrite)
         }
     }
 

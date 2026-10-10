@@ -195,10 +195,11 @@ class DispatchRepository(
         val now = System.currentTimeMillis()
         getJobDao().moveToRecycleBin(jobId, now)
         context?.let { ctx ->
-            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            val syncManager = FirestoreSyncManager.getInstance(ctx)
+            syncManager.scope.launch {
                 try {
-                    val firestore = FirestoreSyncManager.getInstance(ctx).getFirestore()
-                    firestore?.collection("jobs")?.document("job_$jobId")?.update(
+                    val firestore = syncManager.getFirestore()
+                    firestore?.collection(FirestoreSyncManager.JOBS_COLLECTION)?.document("job_$jobId")?.update(
                         mapOf(
                             "isDeleted" to true,
                             "deletedAt" to now,
@@ -206,7 +207,7 @@ class DispatchRepository(
                         )
                     )?.await()
                 } catch (_: Exception) {}
-                FirestoreSyncManager.getInstance(ctx).syncNow()
+                syncManager.syncNow()
             }
         }
     }
@@ -215,10 +216,11 @@ class DispatchRepository(
         val now = System.currentTimeMillis()
         getJobDao().restoreJobFromRecycleBin(jobId, now)
         context?.let { ctx ->
-            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            val syncManager = FirestoreSyncManager.getInstance(ctx)
+            syncManager.scope.launch {
                 try {
-                    val firestore = FirestoreSyncManager.getInstance(ctx).getFirestore()
-                    firestore?.collection("jobs")?.document("job_$jobId")?.update(
+                    val firestore = syncManager.getFirestore()
+                    firestore?.collection(FirestoreSyncManager.JOBS_COLLECTION)?.document("job_$jobId")?.update(
                         mapOf(
                             "isDeleted" to false,
                             "deletedAt" to null,
@@ -226,7 +228,7 @@ class DispatchRepository(
                         )
                     )?.await()
                 } catch (_: Exception) {}
-                FirestoreSyncManager.getInstance(ctx).syncNow()
+                syncManager.syncNow()
             }
         }
     }
@@ -234,10 +236,11 @@ class DispatchRepository(
     suspend fun deleteJobPermanently(jobId: Long) {
         getJobDao().deleteJobById(jobId)
         context?.let { ctx ->
-            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            val syncManager = FirestoreSyncManager.getInstance(ctx)
+            syncManager.scope.launch {
                 try {
-                    val firestore = FirestoreSyncManager.getInstance(ctx).getFirestore()
-                    firestore?.collection("jobs")?.document("job_$jobId")?.delete()?.await()
+                    val firestore = syncManager.getFirestore()
+                    firestore?.collection(FirestoreSyncManager.JOBS_COLLECTION)?.document("job_$jobId")?.delete()?.await()
                 } catch (_: Exception) {}
             }
         }
@@ -247,10 +250,11 @@ class DispatchRepository(
         val now = System.currentTimeMillis()
         getExpertDao().moveToRecycleBin(expertId, now)
         context?.let { ctx ->
-            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            val syncManager = FirestoreSyncManager.getInstance(ctx)
+            syncManager.scope.launch {
                 try {
-                    val firestore = FirestoreSyncManager.getInstance(ctx).getFirestore()
-                    firestore?.collection("experts")?.document("expert_$expertId")?.update(
+                    val firestore = syncManager.getFirestore()
+                    firestore?.collection(FirestoreSyncManager.EXPERTS_COLLECTION)?.document("expert_$expertId")?.update(
                         mapOf(
                             "isDeleted" to true,
                             "deletedAt" to now,
@@ -258,7 +262,7 @@ class DispatchRepository(
                         )
                     )?.await()
                 } catch (_: Exception) {}
-                FirestoreSyncManager.getInstance(ctx).syncNow()
+                syncManager.syncNow()
             }
         }
     }
@@ -267,10 +271,11 @@ class DispatchRepository(
         val now = System.currentTimeMillis()
         getExpertDao().restoreExpertFromRecycleBin(expertId, now)
         context?.let { ctx ->
-            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            val syncManager = FirestoreSyncManager.getInstance(ctx)
+            syncManager.scope.launch {
                 try {
-                    val firestore = FirestoreSyncManager.getInstance(ctx).getFirestore()
-                    firestore?.collection("experts")?.document("expert_$expertId")?.update(
+                    val firestore = syncManager.getFirestore()
+                    firestore?.collection(FirestoreSyncManager.EXPERTS_COLLECTION)?.document("expert_$expertId")?.update(
                         mapOf(
                             "isDeleted" to false,
                             "deletedAt" to null,
@@ -278,7 +283,7 @@ class DispatchRepository(
                         )
                     )?.await()
                 } catch (_: Exception) {}
-                FirestoreSyncManager.getInstance(ctx).syncNow()
+                syncManager.syncNow()
             }
         }
     }
@@ -286,10 +291,11 @@ class DispatchRepository(
     suspend fun deleteExpertPermanently(expertId: Long) {
         getExpertDao().deleteExpertById(expertId)
         context?.let { ctx ->
-            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            val syncManager = FirestoreSyncManager.getInstance(ctx)
+            syncManager.scope.launch {
                 try {
-                    val firestore = FirestoreSyncManager.getInstance(ctx).getFirestore()
-                    firestore?.collection("experts")?.document("expert_$expertId")?.delete()?.await()
+                    val firestore = syncManager.getFirestore()
+                    firestore?.collection(FirestoreSyncManager.EXPERTS_COLLECTION)?.document("expert_$expertId")?.delete()?.await()
                 } catch (_: Exception) {}
             }
         }
@@ -320,9 +326,22 @@ class DispatchRepository(
             last_updated = System.currentTimeMillis()
         )
         val id = getCategoryDao().insertCategory(cat)
+        val finalCat = cat.copy(id = id)
         context?.let { ctx ->
-            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                FirestoreSyncManager.getInstance(ctx).syncNow()
+            val syncManager = FirestoreSyncManager.getInstance(ctx)
+            syncManager.scope.launch {
+                try {
+                    syncManager.getFirestore()?.collection(FirestoreSyncManager.CATEGORIES_COLLECTION)
+                        ?.document("cat_$id")
+                        ?.set(mapOf(
+                            "id" to finalCat.id,
+                            "name" to finalCat.name,
+                            "isDefault" to finalCat.isDefault,
+                            "createdAt" to finalCat.createdAt,
+                            "last_updated" to finalCat.last_updated
+                        ), com.google.firebase.firestore.SetOptions.merge())?.await()
+                } catch (_: Exception) {}
+                syncManager.syncNow()
             }
         }
         return id
@@ -330,6 +349,16 @@ class DispatchRepository(
 
     suspend fun deleteCategory(category: ExpertCategoryEntity) {
         getCategoryDao().deleteCategory(category)
+        context?.let { ctx ->
+            val syncManager = FirestoreSyncManager.getInstance(ctx)
+            syncManager.scope.launch {
+                try {
+                    syncManager.getFirestore()?.collection(FirestoreSyncManager.CATEGORIES_COLLECTION)
+                        ?.document("cat_${category.id}")?.delete()?.await()
+                } catch (_: Exception) {}
+                syncManager.syncNow()
+            }
+        }
     }
 
     suspend fun deleteCategoryByName(name: String) {
@@ -382,20 +411,37 @@ class DispatchRepository(
 
     // Expert operations
     suspend fun insertExpert(expert: ExpertEntity): Long {
-        val id = getExpertDao().insertExpert(expert.copy(last_updated = System.currentTimeMillis()))
+        val updated = expert.copy(last_updated = System.currentTimeMillis())
+        val id = getExpertDao().insertExpert(updated)
+        val finalExpert = updated.copy(id = id)
         context?.let { ctx ->
-            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                FirestoreSyncManager.getInstance(ctx).syncNow()
+            val syncManager = FirestoreSyncManager.getInstance(ctx)
+            syncManager.scope.launch {
+                try {
+                    syncManager.getFirestore()?.collection(FirestoreSyncManager.EXPERTS_COLLECTION)
+                        ?.document("expert_$id")
+                        ?.set(expertToMap(finalExpert), com.google.firebase.firestore.SetOptions.merge())
+                        ?.await()
+                } catch (_: Exception) {}
+                syncManager.syncNow()
             }
         }
         return id
     }
 
     suspend fun updateExpert(expert: ExpertEntity) {
-        getExpertDao().updateExpert(expert.copy(last_updated = System.currentTimeMillis()))
+        val updated = expert.copy(last_updated = System.currentTimeMillis())
+        getExpertDao().updateExpert(updated)
         context?.let { ctx ->
-            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                FirestoreSyncManager.getInstance(ctx).syncNow()
+            val syncManager = FirestoreSyncManager.getInstance(ctx)
+            syncManager.scope.launch {
+                try {
+                    syncManager.getFirestore()?.collection(FirestoreSyncManager.EXPERTS_COLLECTION)
+                        ?.document("expert_${updated.id}")
+                        ?.set(expertToMap(updated), com.google.firebase.firestore.SetOptions.merge())
+                        ?.await()
+                } catch (_: Exception) {}
+                syncManager.syncNow()
             }
         }
     }
@@ -406,6 +452,7 @@ class DispatchRepository(
     suspend fun insertJob(job: CustomerJobEntity): Long {
         val updated = job.copy(last_updated = System.currentTimeMillis())
         val id = getJobDao().insertJob(updated)
+        val insertedJob = updated.copy(id = id)
         getCustomerDao()?.insertCustomer(
             CustomerEntity(
                 name = job.customerName,
@@ -419,50 +466,127 @@ class DispatchRepository(
             )
         )
         context?.let { ctx ->
-            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                FirestoreSyncManager.getInstance(ctx).syncNow()
+            val syncManager = FirestoreSyncManager.getInstance(ctx)
+            syncManager.scope.launch {
+                try {
+                    syncManager.getFirestore()?.collection(FirestoreSyncManager.JOBS_COLLECTION)
+                        ?.document("job_$id")
+                        ?.set(jobToMap(insertedJob), com.google.firebase.firestore.SetOptions.merge())
+                        ?.await()
+                    getJobDao().markJobSynced(id)
+                } catch (_: Exception) {}
+                syncManager.syncNow()
             }
         }
         return id
     }
 
     suspend fun updateJob(job: CustomerJobEntity) {
-        getJobDao().updateJob(job.copy(last_updated = System.currentTimeMillis()))
+        val updated = job.copy(last_updated = System.currentTimeMillis())
+        getJobDao().updateJob(updated)
         context?.let { ctx ->
-            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                FirestoreSyncManager.getInstance(ctx).syncNow()
+            val syncManager = FirestoreSyncManager.getInstance(ctx)
+            syncManager.scope.launch {
+                try {
+                    syncManager.getFirestore()?.collection(FirestoreSyncManager.JOBS_COLLECTION)
+                        ?.document("job_${updated.id}")
+                        ?.set(jobToMap(updated), com.google.firebase.firestore.SetOptions.merge())
+                        ?.await()
+                } catch (_: Exception) {}
+                syncManager.syncNow()
             }
         }
     }
 
     suspend fun unassignExpertFromJob(jobId: Long) {
+        val now = System.currentTimeMillis()
         getJobDao().unassignExpertFromJob(jobId)
         context?.let { ctx ->
-            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                FirestoreSyncManager.getInstance(ctx).syncNow()
+            val syncManager = FirestoreSyncManager.getInstance(ctx)
+            syncManager.scope.launch {
+                try {
+                    val updates = mapOf<String, Any?>(
+                        "status" to JobStatus.PENDING.name,
+                        "assignedExpertId" to null,
+                        "assignedExpertName" to null,
+                        "assignedExpertPhone" to null,
+                        "assigned_technician_id" to null,
+                        "assigned_technician_name" to null,
+                        "last_updated" to now
+                    )
+                    syncManager.getFirestore()?.collection(FirestoreSyncManager.JOBS_COLLECTION)
+                        ?.document("job_$jobId")
+                        ?.update(updates)
+                        ?.await()
+                } catch (_: Exception) {}
+                syncManager.syncNow()
             }
         }
     }
 
     suspend fun updateJobStatus(jobId: Long, status: JobStatus) {
+        val now = System.currentTimeMillis()
         getJobDao().updateJobStatus(jobId, status.name)
         context?.let { ctx ->
-            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                FirestoreSyncManager.getInstance(ctx).syncNow()
+            val syncManager = FirestoreSyncManager.getInstance(ctx)
+            syncManager.scope.launch {
+                try {
+                    syncManager.getFirestore()?.collection(FirestoreSyncManager.JOBS_COLLECTION)
+                        ?.document("job_$jobId")
+                        ?.update(mapOf("status" to status.name, "last_updated" to now))
+                        ?.await()
+                } catch (_: Exception) {}
+                syncManager.syncNow()
             }
         }
     }
 
     suspend fun updateExpertNotified(jobId: Long, sent: Boolean) {
+        val now = System.currentTimeMillis()
         getJobDao().updateExpertNotified(jobId, sent)
+        context?.let { ctx ->
+            val syncManager = FirestoreSyncManager.getInstance(ctx)
+            syncManager.scope.launch {
+                try {
+                    syncManager.getFirestore()?.collection(FirestoreSyncManager.JOBS_COLLECTION)
+                        ?.document("job_$jobId")
+                        ?.update(mapOf("isExpertNotified" to sent, "last_updated" to now))
+                        ?.await()
+                } catch (_: Exception) {}
+            }
+        }
     }
 
     suspend fun updateCustomerNotifiedOnAssign(jobId: Long, sent: Boolean) {
+        val now = System.currentTimeMillis()
         getJobDao().updateCustomerNotifiedOnAssign(jobId, sent)
+        context?.let { ctx ->
+            val syncManager = FirestoreSyncManager.getInstance(ctx)
+            syncManager.scope.launch {
+                try {
+                    syncManager.getFirestore()?.collection(FirestoreSyncManager.JOBS_COLLECTION)
+                        ?.document("job_$jobId")
+                        ?.update(mapOf("isCustomerNotifiedOnAssign" to sent, "last_updated" to now))
+                        ?.await()
+                } catch (_: Exception) {}
+            }
+        }
     }
 
     suspend fun updateCustomerNotifiedOnCompletion(jobId: Long, sent: Boolean) {
+        val now = System.currentTimeMillis()
         getJobDao().updateCustomerNotifiedOnCompletion(jobId, sent)
+        context?.let { ctx ->
+            val syncManager = FirestoreSyncManager.getInstance(ctx)
+            syncManager.scope.launch {
+                try {
+                    syncManager.getFirestore()?.collection(FirestoreSyncManager.JOBS_COLLECTION)
+                        ?.document("job_$jobId")
+                        ?.update(mapOf("isCustomerNotifiedOnCompletion" to sent, "last_updated" to now))
+                        ?.await()
+                } catch (_: Exception) {}
+            }
+        }
     }
 
     suspend fun updateMessageDismissedAt(jobId: Long, time: Long?) {
@@ -487,6 +611,7 @@ class DispatchRepository(
         )
 
         // Update expert's review metrics in database
+        var updatedExpert: ExpertEntity? = null
         if (expertId != null && expertId > 0) {
             val expertDao = getExpertDao()
             val expert = expertDao.getExpertById(expertId)
@@ -496,24 +621,112 @@ class DispatchRepository(
                 val newAvg = (newSum / newCount)
                 val roundedRating = Math.round(newAvg * 10f) / 10f
 
-                expertDao.updateExpert(
-                    expert.copy(
-                        rating = roundedRating,
-                        ratingSum = newSum,
-                        totalRatingsCount = newCount,
-                        completedJobsCount = if (isCompleted) expert.completedJobsCount + 1 else expert.completedJobsCount,
-                        cancelledJobsCount = if (!isCompleted) expert.cancelledJobsCount + 1 else expert.cancelledJobsCount,
-                        last_updated = now
-                    )
+                val uExp = expert.copy(
+                    rating = roundedRating,
+                    ratingSum = newSum,
+                    totalRatingsCount = newCount,
+                    completedJobsCount = if (isCompleted) expert.completedJobsCount + 1 else expert.completedJobsCount,
+                    cancelledJobsCount = if (!isCompleted) expert.cancelledJobsCount + 1 else expert.cancelledJobsCount,
+                    last_updated = now
                 )
+                expertDao.updateExpert(uExp)
+                updatedExpert = uExp
             }
         }
 
         context?.let { ctx ->
-            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                FirestoreSyncManager.getInstance(ctx).syncNow()
+            val syncManager = FirestoreSyncManager.getInstance(ctx)
+            syncManager.scope.launch {
+                try {
+                    val firestore = syncManager.getFirestore()
+                    val jobUpdates = mapOf<String, Any?>(
+                        "status" to newStatus,
+                        "ratingGiven" to rating,
+                        "reviewFeedback" to feedback,
+                        "completedAt" to now,
+                        "last_updated" to now
+                    )
+                    firestore?.collection(FirestoreSyncManager.JOBS_COLLECTION)
+                        ?.document("job_$jobId")
+                        ?.update(jobUpdates)
+                        ?.await()
+
+                    if (updatedExpert != null) {
+                        firestore?.collection(FirestoreSyncManager.EXPERTS_COLLECTION)
+                            ?.document("expert_${updatedExpert.id}")
+                            ?.set(expertToMap(updatedExpert), com.google.firebase.firestore.SetOptions.merge())
+                            ?.await()
+                    }
+                } catch (_: Exception) {}
+                syncManager.syncNow()
             }
         }
+    }
+
+    private fun jobToMap(job: CustomerJobEntity): Map<String, Any?> {
+        return mapOf(
+            "id" to job.id,
+            "customerName" to job.customerName,
+            "customerPhone" to job.customerPhone,
+            "serviceType" to job.serviceType,
+            "issueDescription" to job.issueDescription,
+            "address" to job.address,
+            "latitude" to job.latitude,
+            "longitude" to job.longitude,
+            "status" to job.status,
+            "assignedExpertId" to job.assignedExpertId,
+            "assignedExpertName" to job.assignedExpertName,
+            "assignedExpertPhone" to job.assignedExpertPhone,
+            "distanceKmAtDispatch" to job.distanceKmAtDispatch,
+            "ratingGiven" to job.ratingGiven,
+            "reviewFeedback" to job.reviewFeedback,
+            "createdAt" to job.createdAt,
+            "completedAt" to job.completedAt,
+            "isExpertNotified" to job.isExpertNotified,
+            "isCustomerNotifiedOnAssign" to job.isCustomerNotifiedOnAssign,
+            "isCustomerNotifiedOnCompletion" to job.isCustomerNotifiedOnCompletion,
+            "isDeleted" to job.isDeleted,
+            "deletedAt" to job.deletedAt,
+            "created_by_user_id" to job.created_by_user_id,
+            "created_by_user_name" to job.created_by_user_name,
+            "created_by_designation" to job.created_by_designation,
+            "managed_by_user_id" to job.managed_by_user_id,
+            "managed_by_user_name" to job.managed_by_user_name,
+            "managed_by_designation" to job.managed_by_designation,
+            "assigned_technician_id" to (job.assigned_technician_id ?: job.assignedExpertId),
+            "assigned_technician_name" to (job.assigned_technician_name ?: job.assignedExpertName),
+            "assigned_at_timestamp" to job.assigned_at_timestamp,
+            "last_updated" to job.last_updated
+        )
+    }
+
+    private fun expertToMap(exp: ExpertEntity): Map<String, Any?> {
+        return mapOf(
+            "id" to exp.id,
+            "name" to exp.name,
+            "phone" to exp.phone,
+            "category" to exp.category,
+            "address" to exp.address,
+            "latitude" to exp.latitude,
+            "longitude" to exp.longitude,
+            "isAvailable" to exp.isAvailable,
+            "rating" to exp.rating,
+            "ratingSum" to exp.ratingSum,
+            "totalRatingsCount" to exp.totalRatingsCount,
+            "completedJobsCount" to exp.completedJobsCount,
+            "cancelledJobsCount" to exp.cancelledJobsCount,
+            "isWelcomeMessageSent" to exp.isWelcomeMessageSent,
+            "isDeleted" to exp.isDeleted,
+            "deletedAt" to exp.deletedAt,
+            "added_by_user_id" to exp.added_by_user_id,
+            "added_by_user_name" to exp.added_by_user_name,
+            "added_by_designation" to exp.added_by_designation,
+            "profilePicUrl" to exp.profilePicUrl,
+            "profile_pic_url" to exp.profilePicUrl,
+            "created_at_timestamp" to exp.created_at_timestamp,
+            "createdAt" to exp.createdAt,
+            "last_updated" to exp.last_updated
+        )
     }
 
     suspend fun deleteJob(job: CustomerJobEntity) = getJobDao().deleteJob(job)

@@ -174,7 +174,11 @@ fun UserManagementDialog(
     fun refreshUsers() {
         isLoading = true
         coroutineScope.launch {
-            usersList = syncManager.fetchAllUsers()
+            // Delete IDs of members having phone numbers 9876543210 and 9999999999 from admin panel & Firestore
+            syncManager.deleteUser("9876543210")
+            syncManager.deleteUser("9999999999")
+            val allUsers = syncManager.fetchAllUsers()
+            usersList = allUsers.filter { it.phone != "9876543210" && it.phone != "9999999999" }
             isLoading = false
             lastBackupTimestamp = sessionManager.getLastBackupTimestamp()
             lastBackupStatus = sessionManager.getLastBackupStatus()
@@ -728,7 +732,8 @@ fun UserManagementDialog(
                         Toast.makeText(context, "Team Member '${newUser.name}' (${newUser.displayDesignation}) created successfully!", Toast.LENGTH_SHORT).show()
                         refreshUsers()
                     } else {
-                        Toast.makeText(context, "Failed to create team member: ${result.exceptionOrNull()?.localizedMessage}", Toast.LENGTH_LONG).show()
+                        val msg = com.example.util.NetworkErrorHandler.getFriendlyErrorMessage(result.exceptionOrNull(), "Failed to create team member")
+                        Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
                     }
                 }
             }
@@ -748,7 +753,8 @@ fun UserManagementDialog(
                         Toast.makeText(context, "Role & permissions updated for ${updatedUser.name}", Toast.LENGTH_SHORT).show()
                         refreshUsers()
                     } else {
-                        Toast.makeText(context, "Error updating permissions", Toast.LENGTH_SHORT).show()
+                        val msg = com.example.util.NetworkErrorHandler.getFriendlyErrorMessage(result.exceptionOrNull(), "Error updating permissions")
+                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                     }
                 }
             }

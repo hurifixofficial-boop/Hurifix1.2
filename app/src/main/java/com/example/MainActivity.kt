@@ -12,11 +12,13 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.example.ui.DispatchViewModel
 import com.example.ui.DispatchViewModelFactory
+import com.example.ui.animation.MotionTransitions
 import com.example.ui.components.GlobalLoadingOverlay
 import com.example.ui.screens.AuthScreen
 import com.example.ui.screens.HomeScreen
@@ -55,45 +57,54 @@ class MainActivity : ComponentActivity() {
                     ) {
                         var currentDestination by remember { mutableStateOf(AppDestination.SPLASH) }
 
-                        when (currentDestination) {
-                            AppDestination.SPLASH -> {
-                                SplashScreen(
-                                    onSplashFinished = {
-                                        if (sessionManager.isLoggedIn() && sessionManager.getUserPhone().isNotBlank()) {
+                        AnimatedContent(
+                            targetState = currentDestination,
+                            transitionSpec = {
+                                val forward = targetState.ordinal >= initialState.ordinal
+                                MotionTransitions.pageTransition(forward)
+                            },
+                            label = "PageDestinationTransition"
+                        ) { destination ->
+                            when (destination) {
+                                AppDestination.SPLASH -> {
+                                    SplashScreen(
+                                        onSplashFinished = {
+                                            if (sessionManager.isLoggedIn() && sessionManager.getUserPhone().isNotBlank()) {
+                                                viewModel.onUserLoggedIn(sessionManager.getUserPhone())
+                                                currentDestination = AppDestination.HOME
+                                            } else {
+                                                viewModel.onUserLoggedOut()
+                                                currentDestination = AppDestination.AUTH
+                                            }
+                                        }
+                                    )
+                                }
+
+                                AppDestination.AUTH -> {
+                                    AuthScreen(
+                                        sessionManager = sessionManager,
+                                        onLoginSuccess = {
                                             viewModel.onUserLoggedIn(sessionManager.getUserPhone())
                                             currentDestination = AppDestination.HOME
-                                        } else {
+                                        }
+                                    )
+                                }
+
+                                AppDestination.HOME -> {
+                                    HomeScreen(
+                                        viewModel = viewModel,
+                                        sessionManager = sessionManager,
+                                        isDarkMode = isDarkMode,
+                                        onToggleDarkMode = { newMode ->
+                                            isDarkMode = newMode
+                                            sessionManager.setDarkModeEnabled(newMode)
+                                        },
+                                        onLogout = {
                                             viewModel.onUserLoggedOut()
                                             currentDestination = AppDestination.AUTH
                                         }
-                                    }
-                                )
-                            }
-
-                            AppDestination.AUTH -> {
-                                AuthScreen(
-                                    sessionManager = sessionManager,
-                                    onLoginSuccess = {
-                                        viewModel.onUserLoggedIn(sessionManager.getUserPhone())
-                                        currentDestination = AppDestination.HOME
-                                    }
-                                )
-                            }
-
-                            AppDestination.HOME -> {
-                                HomeScreen(
-                                    viewModel = viewModel,
-                                    sessionManager = sessionManager,
-                                    isDarkMode = isDarkMode,
-                                    onToggleDarkMode = { newMode ->
-                                        isDarkMode = newMode
-                                        sessionManager.setDarkModeEnabled(newMode)
-                                    },
-                                    onLogout = {
-                                        viewModel.onUserLoggedOut()
-                                        currentDestination = AppDestination.AUTH
-                                    }
-                                )
+                                    )
+                                }
                             }
                         }
                     }

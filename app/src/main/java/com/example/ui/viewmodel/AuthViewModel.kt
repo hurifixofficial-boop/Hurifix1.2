@@ -140,14 +140,15 @@ class AuthViewModel : ViewModel() {
                         onSuccess()
                     },
                     onError = { sendErr ->
-                        _uiState.update { it.copy(isSendingOtp = false, errorMessage = sendErr) }
-                        onError(sendErr)
+                        val friendly = com.example.util.NetworkErrorHandler.sanitizeMessage(sendErr)
+                        _uiState.update { it.copy(isSendingOtp = false, errorMessage = friendly) }
+                        onError(friendly)
                     }
                 )
 
             }.onFailure { exc ->
-                // Mobile number is NOT registered in Firestore
-                val msg = exc.localizedMessage ?: "No user found try again"
+                // Mobile number is NOT registered in Firestore or network error
+                val msg = com.example.util.NetworkErrorHandler.getFriendlyErrorMessage(exc, "No user found try again")
                 _uiState.update {
                     it.copy(
                         isSendingOtp = false,
@@ -194,15 +195,16 @@ class AuthViewModel : ViewModel() {
                     result.onSuccess { name ->
                         onSuccess(name)
                     }.onFailure { exc ->
-                        val msg = exc.localizedMessage ?: "No user found try again"
+                        val msg = com.example.util.NetworkErrorHandler.getFriendlyErrorMessage(exc, "No user found try again")
                         _uiState.update { it.copy(errorMessage = msg) }
                         onError(msg)
                     }
                 }
             },
             onError = { err ->
-                _uiState.update { it.copy(isLoading = false, errorMessage = err) }
-                onError(err)
+                val friendly = com.example.util.NetworkErrorHandler.sanitizeMessage(err)
+                _uiState.update { it.copy(isLoading = false, errorMessage = friendly) }
+                onError(friendly)
             }
         )
     }
@@ -242,7 +244,7 @@ class AuthViewModel : ViewModel() {
                 result.onSuccess { name ->
                     onSuccess(name)
                 }.onFailure { exc ->
-                    val msg = exc.localizedMessage ?: "No user found try again"
+                    val msg = com.example.util.NetworkErrorHandler.getFriendlyErrorMessage(exc, "No user found try again")
                     _uiState.update { it.copy(errorMessage = msg) }
                     onError(msg)
                 }

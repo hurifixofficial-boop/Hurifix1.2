@@ -1285,7 +1285,18 @@ fun EditCustomerOrderDialog(
 
                 OutlinedTextField(
                     value = rawLocation,
-                    onValueChange = { if (!isLockedForStaff) rawLocation = it },
+                    onValueChange = { input ->
+                        if (!isLockedForStaff) {
+                            val trimmed = input.trim()
+                            val isGoogleMaps = LocationHelper.isGoogleMapsUrl(trimmed)
+                            val parsed = LocationHelper.parseCoordinatesFromText(trimmed)
+                            if (parsed != null && (isGoogleMaps || trimmed.startsWith("http", ignoreCase = true))) {
+                                rawLocation = "${parsed.first}, ${parsed.second}"
+                            } else {
+                                rawLocation = input
+                            }
+                        }
+                    },
                     label = { Text("Location Coordinates / Maps Link *") },
                     readOnly = isLockedForStaff,
                     enabled = !isLockedForStaff,
@@ -1393,13 +1404,16 @@ fun EditUserProfileDialog(
     fun uploadPickedImage(uri: Uri) {
         isUploadingPhoto = true
         coroutineScope.launch {
-            val result = CloudinaryHelper.compressAndUpload(context, uri)
+            val targetPhone = userPhone.filter { it.isDigit() }.take(10).ifBlank { "user" }
+            val fixedId = "profile_$targetPhone"
+            val result = CloudinaryHelper.compressAndUpload(context, uri, fixedPublicId = fixedId, overwrite = true)
             isUploadingPhoto = false
             result.onSuccess { uploadedUrl ->
                 photoUri = uploadedUrl
                 Toast.makeText(context, "Profile picture updated", Toast.LENGTH_SHORT).show()
-            }.onFailure { _ ->
-                // Silent
+            }.onFailure { err ->
+                val msg = com.example.util.NetworkErrorHandler.getFriendlyErrorMessage(err)
+                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
             }
         }
     }

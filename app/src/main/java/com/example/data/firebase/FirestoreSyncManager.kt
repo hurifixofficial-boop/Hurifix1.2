@@ -36,7 +36,7 @@ enum class SyncState {
 }
 
 class FirestoreSyncManager(private val context: Context) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val db = AppDatabase.getDatabase(context)
 
     private val _syncState = MutableStateFlow(SyncState.IDLE)
@@ -48,6 +48,7 @@ class FirestoreSyncManager(private val context: Context) {
     private var jobsListener: ListenerRegistration? = null
     private var expertsListener: ListenerRegistration? = null
     private var categoriesListener: ListenerRegistration? = null
+    private var usersListener: ListenerRegistration? = null
     private var activeSessionUserListener: ListenerRegistration? = null
 
     companion object {
@@ -281,6 +282,9 @@ class FirestoreSyncManager(private val context: Context) {
             if (localCachedUser != null && localCachedUser.password == password) {
                 return@withContext Result.success(localCachedUser)
             }
+            if (com.example.util.NetworkErrorHandler.isNetworkOrDnsError(e)) {
+                return@withContext Result.failure(Exception(com.example.util.NetworkErrorHandler.NETWORK_ERROR_USER_MESSAGE))
+            }
             Result.failure(Exception("No user found try again"))
         }
     }
@@ -328,6 +332,9 @@ class FirestoreSyncManager(private val context: Context) {
 
             Result.success(user)
         } catch (e: Exception) {
+            if (com.example.util.NetworkErrorHandler.isNetworkOrDnsError(e)) {
+                return@withContext Result.failure(Exception(com.example.util.NetworkErrorHandler.NETWORK_ERROR_USER_MESSAGE))
+            }
             Result.failure(Exception("No user found try again"))
         }
     }
@@ -448,35 +455,53 @@ class FirestoreSyncManager(private val context: Context) {
         phone: String,
         name: String,
         designationTag: String,
-        profilePicUrl: String?
+        profilePicUrl: String?,
+        role: String? = null,
+        oldPhone: String? = null
     ): Result<Unit> = withContext(NonCancellable + Dispatchers.IO) {
-        val cached = getLocalCachedUsers().find { it.phone == phone }
-        if (cached != null) {
-            cacheUserLocally(
-                cached.copy(
-                    name = name,
-                    designation_tag = designationTag,
-                    profile_pic_url = profilePicUrl,
-                    last_updated = System.currentTimeMillis()
-                )
-            )
+        val cleanPhone = phone.replace(Regex("[^0-9]"), "")
+        val cleanOldPhone = oldPhone?.replace(Regex("[^0-9]"), "")
+
+        val cached = getLocalCachedUsers().find { it.phone == cleanPhone || (cleanOldPhone != null && it.phone == cleanOldPhone) }
+        val updatedUser = (cached ?: HurifixUser(phone = cleanPhone, name = name, role = role ?: HurifixUser.ROLE_STAFF)).copy(
+            phone = cleanPhone,
+            name = name.trim(),
+            designation_tag = designationTag.trim(),
+            profile_pic_url = profilePicUrl,
+            role = role ?: cached?.role ?: HurifixUser.ROLE_STAFF,
+            last_updated = System.currentTimeMillis()
+        )
+        cacheUserLocally(updatedUser)
+        if (!cleanOldPhone.isNullOrBlank() && cleanOldPhone != cleanPhone) {
+            removeLocalCachedUser(cleanOldPhone)
         }
+
         val firestore = getFirestore()
         if (firestore == null) {
             return@withContext Result.success(Unit)
         }
         try {
-            val updates = mapOf<String, Any?>(
-                "name" to name,
-                "designation_tag" to designationTag,
+            val updates = mutableMapOf<String, Any?>(
+                "phone" to cleanPhone,
+                "name" to name.trim(),
+                "designation_tag" to designationTag.trim(),
                 "profilePicUrl" to profilePicUrl,
                 "profile_pic_url" to profilePicUrl,
                 "last_updated" to System.currentTimeMillis()
             )
+            if (!role.isNullOrBlank()) {
+                updates["role"] = role
+            }
             firestore.collection(USERS_COLLECTION)
-                .document(phone)
+                .document(cleanPhone)
                 .set(updates, com.google.firebase.firestore.SetOptions.merge())
                 .await()
+
+            if (!cleanOldPhone.isNullOrBlank() && cleanOldPhone != cleanPhone) {
+                try {
+                    firestore.collection(USERS_COLLECTION).document(cleanOldPhone).delete().await()
+                } catch (_: Exception) {}
+            }
             Result.success(Unit)
         } catch (e: Exception) {
             if (e !is CancellationException) {
@@ -547,15 +572,33 @@ class FirestoreSyncManager(private val context: Context) {
         defaultAdmins.forEach { combinedMap[it.phone] = it }
         getLocalCachedUsers().filter { !it.is_deleted }.forEach { combinedMap[it.phone] = it }
 
+        // Proactively purge members having phone numbers 9876543210 and 9999999999
+        val targetDeletedPhones = setOf("9876543210", "9999999999")
+        targetDeletedPhones.forEach { p ->
+            combinedMap.remove(p)
+            removeLocalCachedUser(p)
+        }
+
         val firestore = getFirestore()
         if (firestore == null) {
-            return@withContext combinedMap.values.filter { !it.is_deleted }.toList()
+            return@withContext combinedMap.values.filter { !it.is_deleted && it.phone !in targetDeletedPhones }.toList()
         }
         try {
+            targetDeletedPhones.forEach { p ->
+                try {
+                    firestore.collection(USERS_COLLECTION).document(p).delete()
+                } catch (_: Exception) {}
+            }
             val querySnapshot = firestore.collection(USERS_COLLECTION).get().await()
             val remoteList = querySnapshot.documents.mapNotNull { docToHurifixUser(it) }
             remoteList.forEach { user ->
-                if (!user.is_deleted) {
+                if (user.phone in targetDeletedPhones) {
+                    combinedMap.remove(user.phone)
+                    removeLocalCachedUser(user.phone)
+                    try {
+                        firestore.collection(USERS_COLLECTION).document(user.phone).delete()
+                    } catch (_: Exception) {}
+                } else if (!user.is_deleted) {
                     combinedMap[user.phone] = user
                     cacheUserLocally(user)
                 } else {
@@ -563,10 +606,10 @@ class FirestoreSyncManager(private val context: Context) {
                     removeLocalCachedUser(user.phone)
                 }
             }
-            combinedMap.values.filter { !it.is_deleted }.toList()
+            combinedMap.values.filter { !it.is_deleted && it.phone !in targetDeletedPhones }.toList()
         } catch (e: Exception) {
             Log.d(TAG, "Fetch users fallback to cache: ${e.message}")
-            combinedMap.values.filter { !it.is_deleted }.toList()
+            combinedMap.values.filter { !it.is_deleted && it.phone !in targetDeletedPhones }.toList()
         }
     }
 
@@ -720,6 +763,9 @@ class FirestoreSyncManager(private val context: Context) {
                 if (e !is CancellationException) {
                     Log.e(TAG, "Transaction assignment failed: ${e.message}", e)
                 }
+                if (com.example.util.NetworkErrorHandler.isNetworkOrDnsError(e)) {
+                    return@withContext Result.failure(Exception(com.example.util.NetworkErrorHandler.NETWORK_ERROR_USER_MESSAGE))
+                }
                 return@withContext Result.failure(e)
             }
         }
@@ -808,6 +854,27 @@ class FirestoreSyncManager(private val context: Context) {
                             db.expertCategoryDao().insertCategory(remoteCat.copy(is_synced = true))
                         } catch (err: Exception) {
                             Log.w(TAG, "Sync category item error: ${err.message}")
+                        }
+                    }
+                }
+            }
+
+        // 4. Users listener (Real-time team members & profile sync)
+        usersListener?.remove()
+        usersListener = firestore.collection(USERS_COLLECTION)
+            .addSnapshotListener { snapshots, e ->
+                if (e != null || snapshots == null) return@addSnapshotListener
+                scope.launch {
+                    for (doc in snapshots.documents) {
+                        try {
+                            val remoteUser = docToHurifixUser(doc)
+                            if (remoteUser.is_deleted) {
+                                removeLocalCachedUser(remoteUser.phone)
+                            } else {
+                                cacheUserLocally(remoteUser)
+                            }
+                        } catch (err: Exception) {
+                            Log.w(TAG, "Sync user doc error: ${err.message}")
                         }
                     }
                 }
@@ -1091,7 +1158,7 @@ class FirestoreSyncManager(private val context: Context) {
             val dummyExpert = ExpertEntity(
                 id = 999901L,
                 name = "Live Sync Verification Expert",
-                phone = "9876543210",
+                phone = "9888800001",
                 category = "Electrician",
                 address = "Hurifix Central HQ, Sector 62",
                 latitude = 28.627,
@@ -1118,7 +1185,7 @@ class FirestoreSyncManager(private val context: Context) {
             val dummyJob = CustomerJobEntity(
                 id = 888801L,
                 customerName = "Live Verification Customer",
-                customerPhone = "9876543210",
+                customerPhone = "9888800001",
                 serviceType = "Electrician",
                 issueDescription = "Live Firestore DB Read/Write Verification Order",
                 address = "Hurifix Test Hub, Suite 101",

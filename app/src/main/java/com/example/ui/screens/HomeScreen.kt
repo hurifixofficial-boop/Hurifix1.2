@@ -334,8 +334,15 @@ fun HomeScreen(
 
     LaunchedEffect(statusMessage) {
         statusMessage?.let { msg ->
-            snackbarHostState.showSnackbar(msg)
+            val sanitized = com.example.util.NetworkErrorHandler.sanitizeMessage(msg)
+            snackbarHostState.showSnackbar(sanitized)
             viewModel.clearStatusMessage()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        com.example.util.NetworkMonitor.networkErrorEvent.collect { errorMsg ->
+            snackbarHostState.showSnackbar(errorMsg)
         }
     }
 
@@ -1155,6 +1162,7 @@ fun HomeScreen(
             } else null,
             onSave = { newName, newPhone, newRole, newPhotoUri ->
                 val finalDesignation = if (sessionManager.isAdmin()) newRole else adminDesignation
+                val oldPhone = adminPhone
                 if (sessionManager.isAdmin()) {
                     sessionManager.updateAdminProfile(newName, newPhone, finalDesignation, newPhotoUri)
                 } else {
@@ -1165,9 +1173,21 @@ fun HomeScreen(
                 adminDesignation = finalDesignation
                 adminPhotoUri = newPhotoUri
                 coroutineScope.launch {
-                    syncManager.updateUserProfile(newPhone, newName, finalDesignation, newPhotoUri)
+                    val res = syncManager.updateUserProfile(
+                        phone = newPhone,
+                        name = newName,
+                        designationTag = finalDesignation,
+                        profilePicUrl = newPhotoUri,
+                        role = if (sessionManager.isAdmin()) com.example.data.model.HurifixUser.ROLE_ADMIN else null,
+                        oldPhone = if (oldPhone.isNotBlank() && oldPhone != newPhone) oldPhone else null
+                    )
+                    if (res.isFailure) {
+                        val friendly = com.example.util.NetworkErrorHandler.getFriendlyErrorMessage(res.exceptionOrNull())
+                        snackbarHostState.showSnackbar(friendly)
+                    }
                 }
                 showEditAdminProfileDialog = false
+                com.example.util.SoundManager.playSuccess()
                 Toast.makeText(context, "Profile updated successfully!", Toast.LENGTH_SHORT).show()
             },
             onDismiss = { showEditAdminProfileDialog = false }

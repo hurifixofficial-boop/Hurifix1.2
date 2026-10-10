@@ -81,7 +81,9 @@ import com.example.util.CloudinaryHelper
 import com.example.util.LocationHelper
 import com.example.util.PhoneAuthManager
 import com.example.util.SoundHelper
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import android.app.Activity
 import android.widget.Toast
 import android.Manifest
@@ -174,14 +176,18 @@ fun AddExpertDialog(
         isUploadingImage = true
         imageUploadError = null
         coroutineScope.launch {
-            val result = CloudinaryHelper.compressAndUpload(context, uri)
+            val expPhone = phone.replace(Regex("[^0-9]"), "").ifBlank { initialExpert?.phone?.replace(Regex("[^0-9]"), "") ?: "new_expert" }
+            val fixedId = "expert_$expPhone"
+            val result = CloudinaryHelper.compressAndUpload(context, uri, fixedPublicId = fixedId, overwrite = true)
             isUploadingImage = false
             result.onSuccess { uploadedUrl ->
                 profilePicUrl = uploadedUrl
                 val msg = if (initialExpert == null) "Profile picture added" else "Profile picture updated"
                 Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
             }.onFailure { err ->
-                imageUploadError = err.message ?: "Upload failed"
+                val friendly = com.example.util.NetworkErrorHandler.getFriendlyErrorMessage(err)
+                imageUploadError = friendly
+                Toast.makeText(context, friendly, Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -920,14 +926,35 @@ fun AddExpertDialog(
                         value = rawLocation,
                         onValueChange = { input ->
                             if (!isTimeLocked) {
-                                rawLocation = input
-                                val parsed = LocationHelper.parseCoordinatesFromText(input)
+                                val trimmed = input.trim()
+                                val isGoogleMapsLink = LocationHelper.isGoogleMapsUrl(trimmed)
+                                val parsed = LocationHelper.parseCoordinatesFromText(trimmed)
                                 if (parsed != null) {
                                     latitude = parsed.first
                                     longitude = parsed.second
                                     locationError = null
+                                    rawLocation = if (isGoogleMapsLink || trimmed.startsWith("http", ignoreCase = true)) {
+                                        "${parsed.first}, ${parsed.second}"
+                                    } else {
+                                        input
+                                    }
+                                } else if (isGoogleMapsLink) {
+                                    rawLocation = input
+                                    locationError = null
+                                    coroutineScope.launch(Dispatchers.IO) {
+                                        val resolved = LocationHelper.resolveAndParseGoogleMapsUrl(trimmed)
+                                        if (resolved != null) {
+                                            withContext(Dispatchers.Main) {
+                                                latitude = resolved.first
+                                                longitude = resolved.second
+                                                rawLocation = "${resolved.first}, ${resolved.second}"
+                                                locationError = null
+                                            }
+                                        }
+                                    }
                                 } else {
-                                    locationError = "Enter valid Lat, Lng or Google Maps link"
+                                    rawLocation = input
+                                    locationError = if (input.isBlank()) null else "Enter valid Lat, Lng or Google Maps link"
                                 }
                             }
                         },

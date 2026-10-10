@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -55,6 +56,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.ui.animation.SlideUpModalDialog
+import com.example.ui.animation.FramerAnimatedScreen
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.data.model.CustomerJobEntity
@@ -184,17 +187,13 @@ fun RecycleBinDialog(
         }
     }
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
-    ) {
+    SlideUpModalDialog(
+        onDismissRequest = onDismiss
+    ) { dismissWithAnimation ->
         Surface(
-            modifier = Modifier
-                .fillMaxWidth(0.96f)
-                .fillMaxHeight(0.92f),
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.outlineVariant)
+            modifier = Modifier.fillMaxSize(),
+            shape = androidx.compose.ui.graphics.RectangleShape,
+            color = MaterialTheme.colorScheme.surface
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 // Header with rich styling
@@ -251,7 +250,7 @@ fun RecycleBinDialog(
                                     Text("Empty Bin", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                 }
                             }
-                            IconButton(onClick = onDismiss) {
+                            IconButton(onClick = dismissWithAnimation) {
                                 Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
                             }
                         }
@@ -324,7 +323,11 @@ fun RecycleBinDialog(
                 }
 
                 // Content
-                when (selectedTab) {
+                FramerAnimatedScreen(
+                    targetState = selectedTab,
+                    label = "RecycleBinTabTransition"
+                ) { currentTab ->
+                    when (currentTab) {
                     0 -> {
                         if (deletedJobs.isEmpty()) {
                             EmptyBinState(itemName = "orders")
@@ -361,7 +364,8 @@ fun RecycleBinDialog(
                                     },
                                     modifier = Modifier
                                         .align(Alignment.BottomEnd)
-                                        .padding(16.dp)
+                                        .navigationBarsPadding()
+                                        .padding(end = 24.dp, bottom = 36.dp)
                                 )
                             }
                         }
@@ -402,11 +406,13 @@ fun RecycleBinDialog(
                                     },
                                     modifier = Modifier
                                         .align(Alignment.BottomEnd)
-                                        .padding(16.dp)
+                                        .navigationBarsPadding()
+                                        .padding(end = 24.dp, bottom = 36.dp)
                                 )
                             }
                         }
                     }
+                }
                 }
             }
         }

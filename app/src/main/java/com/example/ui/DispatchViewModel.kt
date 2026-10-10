@@ -19,7 +19,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.regex.Pattern
 
 enum class MainTab(val title: String) {
@@ -172,18 +174,45 @@ class DispatchViewModel(private val repository: DispatchRepository) : ViewModel(
     }
 
     fun updateLocationInput(input: String) {
-        val parsed = LocationHelper.parseCoordinatesFromText(input)
+        val trimmed = input.trim()
+        val isGoogleMapsLink = LocationHelper.isGoogleMapsUrl(trimmed)
+        val parsed = LocationHelper.parseCoordinatesFromText(trimmed)
+
         if (parsed != null) {
+            val displayInput = if (isGoogleMapsLink || trimmed.startsWith("http", ignoreCase = true)) {
+                "${parsed.first}, ${parsed.second}"
+            } else {
+                input
+            }
             _customerForm.value = _customerForm.value.copy(
-                rawLocationInput = input,
+                rawLocationInput = displayInput,
                 latitude = parsed.first,
                 longitude = parsed.second,
                 hasValidLocation = true
             )
+        } else if (isGoogleMapsLink) {
+            // A Google Maps link was provided; do not mark the box red, resolve and extract coordinates
+            _customerForm.value = _customerForm.value.copy(
+                rawLocationInput = input,
+                hasValidLocation = true
+            )
+            viewModelScope.launch(Dispatchers.IO) {
+                val resolved = LocationHelper.resolveAndParseGoogleMapsUrl(trimmed)
+                if (resolved != null) {
+                    withContext(Dispatchers.Main) {
+                        _customerForm.value = _customerForm.value.copy(
+                            rawLocationInput = "${resolved.first}, ${resolved.second}",
+                            latitude = resolved.first,
+                            longitude = resolved.second,
+                            hasValidLocation = true
+                        )
+                    }
+                }
+            }
         } else {
             _customerForm.value = _customerForm.value.copy(
                 rawLocationInput = input,
-                hasValidLocation = false
+                hasValidLocation = input.isBlank()
             )
         }
     }
@@ -358,13 +387,18 @@ class DispatchViewModel(private val repository: DispatchRepository) : ViewModel(
                     managedByDesignation = managedByDesignation.ifBlank { null }
                 )
                 if (result.isSuccess) {
+                    com.example.util.SoundManager.playSuccess()
                     _activeJobForNearestExperts.value = null
                     _currentMainTab.value = MainTab.CUSTOMER_ORDERS
                     _currentCustomerSubTab.value = CustomerSubTab.ORDERS
                     _currentOrderStatusTab.value = OrderStatusTab.PROCESSING
                     _statusMessage.value = "Expert ${ranked.expert.name} assigned! Moved to Processing."
                 } else {
-                    _statusMessage.value = result.exceptionOrNull()?.localizedMessage ?: "Assignment conflict: order was already assigned!"
+                    com.example.util.SoundManager.playError()
+                    _statusMessage.value = com.example.util.NetworkErrorHandler.getFriendlyErrorMessage(
+                        result.exceptionOrNull(),
+                        "Assignment conflict: order was already assigned!"
+                    )
                 }
             }
         }
@@ -385,10 +419,15 @@ class DispatchViewModel(private val repository: DispatchRepository) : ViewModel(
                 userDesignation = currentUserDesignation.ifBlank { null }
             )
             if (result.isSuccess) {
+                com.example.util.SoundManager.playSuccess()
                 _statusMessage.value = "You are now managing order #${job.id}"
                 onDone()
             } else {
-                _statusMessage.value = "Failed to takeover order: ${result.exceptionOrNull()?.localizedMessage}"
+                com.example.util.SoundManager.playError()
+                _statusMessage.value = com.example.util.NetworkErrorHandler.getFriendlyErrorMessage(
+                    result.exceptionOrNull(),
+                    "Failed to takeover order"
+                )
             }
         }
     }

@@ -26,7 +26,13 @@ class SevaMitraApplication : Application(), Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
 
-        // 1. Ensure categories and defaults
+        // 1. Initialize Network Monitor & Sound Manager
+        try {
+            com.example.util.NetworkMonitor.initialize(this)
+            com.example.util.SoundManager.initialize(this)
+        } catch (_: Throwable) {}
+
+        // 2. Ensure categories and defaults
         applicationScope.launch {
             try {
                 repository.ensureDefaultCategoriesForCurrentUser()
@@ -34,17 +40,17 @@ class SevaMitraApplication : Application(), Configuration.Provider {
             } catch (_: Throwable) {}
         }
 
-        // 2. Start Realtime Cloud Sync Listeners
+        // 3. Start Realtime Cloud Sync Listeners
         try {
             FirestoreSyncManager.getInstance(this).startRealtimeSyncListeners()
         } catch (_: Throwable) {}
 
-        // 3. Schedule WorkManager Periodic Cloud Sync (every 15 mins)
+        // 4. Schedule WorkManager Periodic Cloud Sync (every 15 mins)
         try {
             SyncWorker.schedulePeriodicSync(this)
         } catch (_: Throwable) {}
 
-        // 4. Initialize scheduled Google Drive Auto-Backup if enabled
+        // 5. Initialize scheduled Google Drive Auto-Backup if enabled
         try {
             val sessionManager = SessionManager(this)
             if (sessionManager.isAutoBackupEnabled()) {
