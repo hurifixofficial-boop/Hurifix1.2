@@ -1,9 +1,0 @@
-{
-  "name": "hurifix",
-  "version": "1.0.0",
-  "description": "Multi-User Service & Task Management Portal with Framer Motion transitions",
-  "private": true,
-  "dependencies": {
-    "framer-motion": "^11.11.17"
-  }
-}
